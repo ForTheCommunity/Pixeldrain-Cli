@@ -1,0 +1,172 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          # Windows
+          - name: Windows x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary: target/x86_64-pc-windows-msvc/release/pixeldrain-cli.exe
+            asset: pixeldrain-cli-windows-x86_64.exe
+
+          # macOS
+          - name: macOS Apple Silicon
+            os: macos-latest
+            target: aarch64-apple-darwin
+            binary: target/aarch64-apple-darwin/release/pixeldrain-cli
+            asset: pixeldrain-cli-macos-aarch64
+
+          - name: macOS Intel
+            os: macos-latest
+            target: x86_64-apple-darwin
+            binary: target/x86_64-apple-darwin/release/pixeldrain-cli
+            asset: pixeldrain-cli-macos-x86_64
+
+          # Linux
+          - name: Linux x86_64 GNU
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary: target/x86_64-unknown-linux-gnu/release/pixeldrain-cli
+            asset: pixeldrain-cli-linux-x86_64-gnu
+
+          - name: Linux x86_64 MUSL
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            binary: target/x86_64-unknown-linux-musl/release/pixeldrain-cli
+            asset: pixeldrain-cli-linux-x86_64-musl
+
+          - name: Linux ARM64
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            binary: target/aarch64-unknown-linux-gnu/release/pixeldrain-cli
+            asset: pixeldrain-cli-linux-aarch64-gnu
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # Required for the MUSL build
+      - name: Install MUSL tools
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p dist
+
+          cp "${{ matrix.binary }}" "dist/${{ matrix.asset }}"
+
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "dist/${{ matrix.asset }}" \
+              > "dist/sha256-${{ matrix.target }}.txt"
+          else
+            shasum -a 256 "dist/${{ matrix.asset }}" \
+              > "dist/sha256-${{ matrix.target }}.txt"
+          fi
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist/
+
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare Release Assets
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p release
+
+          echo "Downloaded artifacts:"
+          find artifacts -type f -print
+
+          # Windows
+          cp artifacts/x86_64-pc-windows-msvc/pixeldrain-cli-windows-x86_64.exe \
+             release/
+
+          # macOS
+          cp artifacts/aarch64-apple-darwin/pixeldrain-cli-macos-aarch64 \
+             release/
+
+          cp artifacts/x86_64-apple-darwin/pixeldrain-cli-macos-x86_64 \
+             release/
+
+          # Linux
+          cp artifacts/x86_64-unknown-linux-gnu/pixeldrain-cli-linux-x86_64-gnu \
+             release/
+
+          cp artifacts/x86_64-unknown-linux-musl/pixeldrain-cli-linux-x86_64-musl \
+             release/
+
+          cp artifacts/aarch64-unknown-linux-gnu/pixeldrain-cli-linux-aarch64-gnu \
+             release/
+
+          # Combined SHA256 checksums
+          cat \
+            artifacts/x86_64-pc-windows-msvc/sha256-x86_64-pc-windows-msvc.txt \
+            artifacts/aarch64-apple-darwin/sha256-aarch64-apple-darwin.txt \
+            artifacts/x86_64-apple-darwin/sha256-x86_64-apple-darwin.txt \
+            artifacts/x86_64-unknown-linux-gnu/sha256-x86_64-unknown-linux-gnu.txt \
+            artifacts/x86_64-unknown-linux-musl/sha256-x86_64-unknown-linux-musl.txt \
+            artifacts/aarch64-unknown-linux-gnu/sha256-aarch64-unknown-linux-gnu.txt \
+            > release/SHA256_CHECKSUMS.txt
+
+          echo
+          echo "Release assets:"
+          ls -lh release/
+
+          echo
+          echo "SHA256_CHECKSUMS.txt:"
+          cat release/SHA256_CHECKSUMS.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          name: Release ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

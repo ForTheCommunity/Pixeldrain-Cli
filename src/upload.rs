@@ -25,7 +25,8 @@ fn collect_files(paths: &[PathBuf], formats: Option<&[String]>) -> Result<Vec<Pa
         }
     }
 
-    files.sort();
+    // Natural Ordering of Files
+    files.sort_by(|a, b| natord::compare(&a.to_string_lossy(), &b.to_string_lossy()));
     // removing duplicate entries
     // eg. ./videos/1.mp4 & ./videos/
     // there will be two 1.mp4 so removing duplicate entries...

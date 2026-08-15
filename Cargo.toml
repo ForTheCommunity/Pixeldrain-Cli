@@ -10,6 +10,7 @@ argon2 = "0.5.3"
 base64 = "0.23.1"
 clap = { version = "4.4", features = ["derive"] }
 directories = "6.0.0"
+natord = "1.0.9"
 rand = "0.10.2"
 reqwest = { version = "0.13.4", default-features = false, features = ["multipart", "rustls", "json", "stream"] }
 rpassword = "7.5.4"
