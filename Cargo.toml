@@ -1,0 +1,18 @@
+[package]
+name = "pixeldrain-cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+aes-gcm = "0.11.0"
+anyhow = "1.0.104"
+argon2 = "0.5.3"
+base64 = "0.23.1"
+clap = { version = "4.4", features = ["derive"] }
+directories = "6.0.0"
+rand = "0.10.2"
+reqwest = { version = "0.13.4", default-features = false, features = ["multipart", "rustls", "json", "stream"] }
+rpassword = "7.5.4"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+tokio = { version = "1", features = ["full"] }

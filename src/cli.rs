@@ -1,0 +1,28 @@
+use clap::{Parser, Subcommand};
+use std::path::PathBuf;
+
+#[derive(Parser)]
+#[command(version)]
+pub struct Cli {
+    #[command(subcommand)]
+    pub command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+pub enum Commands {
+    /// Login to Pixeldrain.
+    Login,
+    /// Upload File/s.
+    Upload {
+        /// file/s or Folder/s Path to upload.
+        #[arg(short = 'p', long,num_args = 1..)]
+        paths: Vec<PathBuf>,
+        /// Move uploaded files to a new album \ list.
+        #[arg(short = 'a', long)]
+        album: Option<String>,
+        /// File Format Filter, only files with specified filter will be upload.
+        /// eg : -f mp4 mkv jpeg
+        #[arg(short = 'f', long, num_args = 1..)]
+        formats: Option<Vec<String>>,
+    },
+}

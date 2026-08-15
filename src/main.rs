@@ -1,0 +1,46 @@
+use clap::{CommandFactory, Parser};
+use pixeldrain_cli::auth;
+use pixeldrain_cli::cli::{Cli, Commands};
+use pixeldrain_cli::login::login;
+use pixeldrain_cli::upload::upload;
+
+mod cli;
+mod upload;
+
+#[tokio::main]
+async fn main() {
+    let cli_args = Cli::parse();
+
+    match &cli_args.command {
+        Some(Commands::Login) => {
+            match login() {
+                Ok(_a) => {}
+                Err(e) => println!("Error : {}", e),
+            };
+        }
+        Some(Commands::Upload {
+            paths,
+            album,
+            formats,
+        }) => {
+            if paths.is_empty() {
+                let mut cmd = Cli::command();
+
+                cmd.find_subcommand_mut("upload")
+                    .unwrap()
+                    .print_help()
+                    .unwrap();
+
+                return;
+            }
+
+            match upload(paths, album, formats.as_deref()).await {
+                Ok(_a) => {}
+                Err(e) => {
+                    println!("Error -> {}", e)
+                }
+            }
+        }
+        None => Cli::command().print_help().expect("failed to print help"),
+    }
+}
