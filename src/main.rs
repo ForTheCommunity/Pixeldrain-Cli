@@ -37,6 +37,9 @@ async fn main() {
                 }
             }
         }
+        Some(Commands::About) => {
+            pixeldrain_cli::about::print_about();
+        }
         None => Cli::command().print_help().expect("failed to print help"),
     }
 }

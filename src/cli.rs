@@ -15,7 +15,7 @@ pub enum Commands {
     /// Upload File/s.
     Upload {
         /// file/s or Folder/s Path to upload.
-        #[arg(short = 'p', long,num_args = 1..)]
+        #[arg(short = 'p', long, num_args = 1..)]
         paths: Vec<PathBuf>,
         /// Move uploaded files to a new album \ list.
         #[arg(short = 'a', long)]
@@ -25,4 +25,6 @@ pub enum Commands {
         #[arg(short = 'f', long, num_args = 1..)]
         formats: Option<Vec<String>>,
     },
+    /// Show information about this project.
+    About,
 }
