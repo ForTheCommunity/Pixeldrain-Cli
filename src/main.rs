@@ -1,11 +1,7 @@
 use clap::{CommandFactory, Parser};
-use pixeldrain_cli::auth;
 use pixeldrain_cli::cli::{Cli, Commands};
 use pixeldrain_cli::login::login;
 use pixeldrain_cli::upload::upload;
-
-mod cli;
-mod upload;
 
 #[tokio::main]
 async fn main() {

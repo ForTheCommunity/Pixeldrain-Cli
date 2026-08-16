@@ -3,7 +3,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use reqwest::Client;
 
-use crate::auth;
+use crate::{
+    auth,
+    progress_bar::{ProgressReader, UploadProgress},
+};
 
 fn collect_files(paths: &[PathBuf], formats: Option<&[String]>) -> Result<Vec<PathBuf>> {
     // ALL FILES
@@ -89,18 +92,13 @@ pub async fn upload(
 
     let total_files = files.len();
 
-    println!("Total Files : {}", total_files);
-
-    println!("Files to Upload :");
-
-    for file in &files {
-        if let Some(name) = file.file_name().and_then(|n| n.to_str()) {
-            println!(" {} ", name);
-        }
-    }
+    println!("   ✦ Total Files : {}", total_files);
 
     // uploading
     let client = reqwest::Client::new();
+    // progress bar
+    let progress_bar = UploadProgress::new(total_files);
+
     let mut file_ids: Vec<String> = Vec::new();
     for a_file in files {
         let filename = a_file
@@ -108,8 +106,19 @@ pub async fn upload(
             .and_then(|name| name.to_str())
             .unwrap_or("file");
 
-        let part = reqwest::multipart::Part::file(&a_file)
-            .await?
+        // file size for progress bar.
+        let file_size = tokio::fs::metadata(&a_file).await?.len();
+
+        // creating a progress bar per file.
+        let file_pb = progress_bar.file_started(filename, file_size);
+
+        // opening file and wrapping it in a ProgressReader so the bar
+        // increases automatically as reqwest streams the body.
+        let file_handle = tokio::fs::File::open(&a_file).await?;
+        let progress_reader = ProgressReader::new(file_handle, file_pb.clone());
+        let stream = tokio_util::io::ReaderStream::new(progress_reader);
+        let body = reqwest::Body::wrap_stream(stream);
+        let part = reqwest::multipart::Part::stream_with_length(body, file_size)
             .file_name(filename.to_string());
 
         let form = reqwest::multipart::Form::new().part("file", part);
@@ -129,13 +138,16 @@ pub async fn upload(
             if let Some(file_id) = response_json["id"].as_str() {
                 file_ids.push(file_id.to_string());
             }
-            println!("✓ {} uploaded", filename);
-            println!("  Response: {}", body);
+            progress_bar.file_finished(&file_pb, filename, true);
         } else {
-            eprintln!("✗ {} failed: HTTP {}", filename, status);
-            eprintln!("  Response: {}", body);
+            progress_bar.file_finished(&file_pb, filename, false);
+            progress_bar
+                .overall_pb
+                .println(format!("  Error: HTTP {} – {}", status, body));
         }
     }
+
+    progress_bar.all_finished();
 
     // moving to albumn...
     if let Some(album_name) = album {
