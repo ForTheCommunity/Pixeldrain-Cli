@@ -2,6 +2,7 @@
 
 A simple command-line client for uploading files and directories to [Pixeldrain](https://pixeldrain.com).
 
+-> Join [Matrix Chat Room](https://matrix.to/#/#pixeldrain_cli:matrix.org)
 
 ## Features
 
@@ -189,18 +190,12 @@ The CLI uses the platform's appropriate application-data directory rather than p
 
 
 
-## Roadmap
+## Todos :
 
-- [ ] Upload progress bars
-- [ ] Upload speed display
-- [ ] Upload ETA
-- [ ] Resume interrupted uploads
-- [ ] Better duplicate detection
+- [ ] Resume interrupted uploads | save state/progres of uploaded files and resume uploading remaining files.
 - [ ] Parallel uploads
 - [ ] Configurable upload concurrency
 - [ ] More detailed error handling
-
-
 
 
 ## Support
@@ -213,8 +208,6 @@ If you find this project useful, consider supporting its development.
 ## License
 
 This project is licensed under the **[Unlicense](https://unlicense.org)**. You can view the full license text in the [UNLICENSE](./UNLICENSE) file.
-
-
 
 
 
