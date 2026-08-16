@@ -92,12 +92,19 @@ pub async fn upload(
 
     let total_files = files.len();
 
+    let mut total_bytes: u64 = 0;
+    for file in &files {
+        if let Ok(meta) = tokio::fs::metadata(file).await {
+            total_bytes += meta.len();
+        }
+    }
+
     println!("   ✦ Total Files : {}", total_files);
 
     // uploading
     let client = reqwest::Client::new();
     // progress bar
-    let progress_bar = UploadProgress::new(total_files);
+    let progress_bar = UploadProgress::new(total_files, total_bytes);
 
     let mut file_ids: Vec<String> = Vec::new();
     for a_file in files {
@@ -115,7 +122,8 @@ pub async fn upload(
         // opening file and wrapping it in a ProgressReader so the bar
         // increases automatically as reqwest streams the body.
         let file_handle = tokio::fs::File::open(&a_file).await?;
-        let progress_reader = ProgressReader::new(file_handle, file_pb.clone());
+        let progress_reader =
+            ProgressReader::new(file_handle, file_pb.clone(), progress_bar.overall_pb.clone());
         let stream = tokio_util::io::ReaderStream::new(progress_reader);
         let body = reqwest::Body::wrap_stream(stream);
         let part = reqwest::multipart::Part::stream_with_length(body, file_size)
