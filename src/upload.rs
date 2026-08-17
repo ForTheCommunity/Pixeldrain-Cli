@@ -122,8 +122,12 @@ pub async fn upload(
         // opening file and wrapping it in a ProgressReader so the bar
         // increases automatically as reqwest streams the body.
         let file_handle = tokio::fs::File::open(&a_file).await?;
-        let progress_reader =
-            ProgressReader::new(file_handle, file_pb.clone(), progress_bar.overall_pb.clone());
+        let progress_reader = ProgressReader::new(
+            file_handle,
+            file_pb.clone(),
+            progress_bar.overall_pb.clone(),
+            !progress_bar.is_single_file(),
+        );
         let stream = tokio_util::io::ReaderStream::new(progress_reader);
         let body = reqwest::Body::wrap_stream(stream);
         let part = reqwest::multipart::Part::stream_with_length(body, file_size)
