@@ -89,6 +89,15 @@ You can also use extensions with a leading dot:
 pixeldrain-cli upload -p ./videos -f .mp4 .mkv
 ```
 
+### Delete files after upload
+
+Use `-d` / `--delete` to automatically delete local files after they have been successfully uploaded to Pixeldrain:
+
+```bash
+pixeldrain-cli upload -p ./videos -f mp4 mkv -d
+```
+
+
 ### Create an album
 
 Use `-a` / `--album`:
@@ -120,6 +129,7 @@ pixeldrain-cli upload [OPTIONS]
 | `-p` | `--paths` | File or directory paths to upload |
 | `-a` | `--album` | Create an album with the uploaded files |
 | `-f` | `--formats` | File extensions to upload |
+| `-d` | `--delete` | delete uploaded files from local storage device [HDD / SSD] |
 
 Example:
 
