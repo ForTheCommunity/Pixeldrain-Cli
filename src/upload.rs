@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use reqwest::Client;
+use serde::Deserialize;
 
 use crate::{
     auth,
@@ -80,15 +81,20 @@ fn matches_format(path: &Path, formats: Option<&[String]>) -> bool {
     })
 }
 
-#[allow(dead_code)]
 pub async fn upload(
-    paths: &Vec<PathBuf>,
-    album: &Option<String>,
+    paths: &[PathBuf],
+    album: Option<&str>,
     formats: Option<&[String]>,
+    delete: bool,
 ) -> Result<()> {
     let api_key = auth::get_api_key()?;
 
     let files = collect_files(paths, formats)?;
+
+    if files.is_empty() {
+        println!("  No matching files found.");
+        return Ok(());
+    }
 
     let total_files = files.len();
 
@@ -114,14 +120,35 @@ pub async fn upload(
             .unwrap_or("file");
 
         // file size for progress bar.
-        let file_size = tokio::fs::metadata(&a_file).await?.len();
+        let file_size = match tokio::fs::metadata(&a_file).await {
+            Ok(metadata) => metadata.len(),
+            Err(e) => {
+                progress_bar.overall_pb.println(format!(
+                    "  ⚠ Skipped {}: unable to read file metadata: {}",
+                    filename, e
+                ));
+                continue;
+            }
+        };
 
         // creating a progress bar per file.
         let file_pb = progress_bar.file_started(filename, file_size);
 
         // opening file and wrapping it in a ProgressReader so the bar
         // increases automatically as reqwest streams the body.
-        let file_handle = tokio::fs::File::open(&a_file).await?;
+        let file_handle = match tokio::fs::File::open(&a_file).await {
+            Ok(file) => file,
+            Err(e) => {
+                progress_bar.file_finished(&file_pb, filename, false);
+
+                progress_bar
+                    .overall_pb
+                    .println(format!("  ⚠ Failed to open {}: {}", filename, e));
+
+                continue;
+            }
+        };
+
         let progress_reader = ProgressReader::new(
             file_handle,
             file_pb.clone(),
@@ -135,36 +162,100 @@ pub async fn upload(
 
         let form = reqwest::multipart::Form::new().part("file", part);
 
-        let response = client
+        let response = match client
             .post("https://pixeldrain.com/api/file")
             .basic_auth("", Some(&api_key))
             .multipart(form)
             .send()
-            .await?;
+            .await
+        {
+            Ok(response) => response,
+            Err(e) => {
+                progress_bar.file_finished(&file_pb, filename, false);
+
+                progress_bar
+                    .overall_pb
+                    .println(format!("  ⚠ Failed to upload {}: {}", filename, e));
+
+                continue;
+            }
+        };
 
         let status = response.status();
-        let body = response.text().await?;
+
+        let body = match response.text().await {
+            Ok(body) => body,
+            Err(e) => {
+                progress_bar.file_finished(&file_pb, filename, false);
+
+                progress_bar.overall_pb.println(format!(
+                    "  ⚠ Failed to read upload response for {}: {}",
+                    filename, e
+                ));
+
+                continue;
+            }
+        };
 
         if status.is_success() {
-            let response_json: serde_json::Value = serde_json::from_str(&body)?;
-            if let Some(file_id) = response_json["id"].as_str() {
-                file_ids.push(file_id.to_string());
-            }
+            let response_json: UploadResponse = match serde_json::from_str(&body) {
+                Ok(json) => json,
+                Err(e) => {
+                    progress_bar.file_finished(&file_pb, filename, false);
+
+                    if delete {
+                        progress_bar.overall_pb.println(format!(
+                            "  ⚠ Upload succeeded for {}, but the server returned an invalid response. Local file was NOT deleted: {}",
+                            filename, e
+                        ));
+                    } else {
+                        progress_bar.overall_pb.println(format!(
+                            "  ⚠ Upload succeeded for {}, but the server returned an invalid response: {}",
+                            filename, e
+                        ));
+                    }
+
+                    continue;
+                }
+            };
+
+            file_ids.push(response_json.id.clone());
             progress_bar.file_finished(&file_pb, filename, true);
+
+            // Delete only after a successful upload with a valid file ID.
+            if delete {
+                match tokio::fs::remove_file(&a_file).await {
+                    Ok(_) => {
+                        progress_bar
+                            .overall_pb
+                            .println(format!("  ✓ Deleted: {}", a_file.display()));
+                    }
+                    Err(e) => {
+                        progress_bar.overall_pb.println(format!(
+                            "  ⚠ Failed to delete {}: {}",
+                            a_file.display(),
+                            e
+                        ));
+                    }
+                }
+            }
         } else {
             progress_bar.file_finished(&file_pb, filename, false);
-            progress_bar
-                .overall_pb
-                .println(format!("  Error: HTTP {} – {}", status, body));
+            progress_bar.overall_pb.println(format!(
+                "  ⚠ Upload failed for '{}': HTTP {} – {}",
+                filename, status, body
+            ));
         }
     }
 
     progress_bar.all_finished();
 
-    // moving to albumn...
+    // Create album with successfully uploaded files.
     if let Some(album_name) = album {
         if !file_ids.is_empty() {
-            create_album(&client, &api_key, album_name, &file_ids).await?;
+            if let Err(e) = create_album(&client, &api_key, album_name, &file_ids).await {
+                eprintln!("  ⚠ Failed to create album '{}': {}", album_name, e);
+            }
         }
     }
 
@@ -223,4 +314,9 @@ async fn create_album(
     }
 
     Ok(())
+}
+
+#[derive(Deserialize)]
+struct UploadResponse {
+    id: String,
 }

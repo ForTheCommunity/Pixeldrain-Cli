@@ -24,6 +24,9 @@ pub enum Commands {
         /// eg : -f mp4 mkv jpeg
         #[arg(short = 'f', long, num_args = 1..)]
         formats: Option<Vec<String>>,
+        /// Delete local files after they are successfully uploaded.
+        #[arg(short = 'd', long)]
+        delete: bool,
     },
     /// Show information about this project.
     About,

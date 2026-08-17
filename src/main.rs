@@ -18,6 +18,7 @@ async fn main() {
             paths,
             album,
             formats,
+            delete
         }) => {
             if paths.is_empty() {
                 let mut cmd = Cli::command();
@@ -30,7 +31,7 @@ async fn main() {
                 return;
             }
 
-            match upload(paths, album, formats.as_deref()).await {
+            match upload(paths, album.as_deref(), formats.as_deref(),*delete).await {
                 Ok(_a) => {}
                 Err(e) => {
                     println!("Error -> {}", e)
