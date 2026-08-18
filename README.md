@@ -14,7 +14,7 @@ A simple command-line client for uploading files and directories to [Pixeldrain]
 - Upload multiple files at once
 - Upload directories recursively
 - Filter files by extension
-- Upload files in lexicographical order
+- Upload files in natural order
 - Create a Pixeldrain album from uploaded files
 - Securely store your Pixeldrain API key locally
 - Encrypt the API key using a user-provided password
