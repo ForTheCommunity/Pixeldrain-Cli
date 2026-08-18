@@ -3,6 +3,10 @@
 A simple command-line client for uploading files and directories to [Pixeldrain](https://pixeldrain.com).
 
 -> Join [Matrix Chat Room](https://matrix.to/#/#pixeldrain_cli:matrix.org)
+<br>
+# Pixeldrain-cli files upload demo.
+![pixeldrain-cli upload](https://github.com/ForTheCommunity/Assets/blob/main/pixeldrain-cli/pixeldrain-cli_upload.gif?raw=true)
+<br>
 
 ## Features
 
@@ -19,12 +23,12 @@ A simple command-line client for uploading files and directories to [Pixeldrain]
 
 ## --> Download | Install :
 
-### # Download binaries from [releases](https://github.com/ForTheCommunity/Pixeldrain-Cli/releases) Page.
+## # Download binaries from [releases](https://github.com/ForTheCommunity/Pixeldrain-Cli/releases) Page.
 
 > Binaries are available for Windows OS and Mac OS but are not tested on these platforms.
 > App is only tested on Linux Platform.
 
-### # Install using [AppMan](https://github.com/ivan-hc/AppMan) / [AM](https://github.com/ivan-hc/AM).
+## # Install using [AppMan](https://github.com/ivan-hc/AppMan) / [AM](https://github.com/ivan-hc/AM).
 ```
 appman install pixeldrain-cli
 ```
@@ -37,7 +41,7 @@ Run:
 pixeldrain-cli --help
 ```
 
-### Login
+## Login
 
 Before uploading files, configure your Pixeldrain API key:
 
@@ -49,19 +53,19 @@ The CLI will ask for your API key and a password.
 
 The API key is encrypted before being stored locally.
 
-### Upload a file
+## Upload a file
 
 ```bash
 pixeldrain-cli upload -p video.mp4
 ```
 
-### Upload multiple files
+## Upload multiple files
 
 ```bash
 pixeldrain-cli upload -p video.mp4 movie.mkv image.jpg
 ```
 
-### Upload a directory
+## Upload a directory
 
 ```bash
 pixeldrain-cli upload -p ./videos
@@ -69,13 +73,13 @@ pixeldrain-cli upload -p ./videos
 
 Directories are searched recursively.
 
-### Upload files and directories together
+## Upload files and directories together
 
 ```bash
 pixeldrain-cli upload -p video.mp4  ~/Downloads/Videos/ -p ~/Downloads/Photos/
 ```
 
-### Filter by file format
+## Filter by file format
 
 Use `-f` / `--formats` to upload only specific file types:
 
@@ -89,7 +93,7 @@ You can also use extensions with a leading dot:
 pixeldrain-cli upload -p ./videos -f .mp4 .mkv
 ```
 
-### Delete files after upload
+## Delete files after upload
 
 Use `-d` / `--delete` to automatically delete local files after they have been successfully uploaded to Pixeldrain:
 
@@ -98,7 +102,7 @@ pixeldrain-cli upload -p ./videos -f mp4 mkv -d
 ```
 
 
-### Create an album
+## Create an album
 
 Use `-a` / `--album`:
 
@@ -110,7 +114,7 @@ After the files are uploaded, the CLI creates a Pixeldrain album containing the 
 
 ## Command Reference
 
-### `login`
+## `login`
 
 ```text
 pixeldrain-cli login
@@ -118,7 +122,7 @@ pixeldrain-cli login
 
 Configure and securely store your Pixeldrain API key.
 
-### `upload`
+## `upload`
 
 ```text
 pixeldrain-cli upload [OPTIONS]
@@ -171,7 +175,7 @@ The encrypted credentials are stored in the platform's standard application-data
 
 The exact location depends on the operating system.
 
-### Linux
+## Linux
 
 Typically:
 
@@ -179,7 +183,7 @@ Typically:
 ~/.local/share/pixeldrain-cli/
 ```
 
-### macOS
+## macOS
 
 Typically:
 
@@ -187,7 +191,7 @@ Typically:
 ~/Library/Application Support/pixeldrain-cli/
 ```
 
-### Windows
+## Windows
 
 Typically:
 
