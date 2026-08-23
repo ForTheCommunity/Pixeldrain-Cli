@@ -28,6 +28,34 @@ pub enum Commands {
         #[arg(short = 'd', long)]
         delete: bool,
     },
+
+    /// Manage Albums/Lists
+    Album {
+        #[command(subcommand)]
+        action: AlbumActions,
+    },
+
     /// Show information about this project.
     About,
+}
+
+#[derive(Subcommand)]
+pub enum AlbumActions {
+    /// List all albums/lists in your account. ( alias : l )
+    #[command(alias = "l")]
+    List,
+
+    /// List all files inside an album/list. ( alias : f )
+    #[command(alias = "f")]
+    Files {
+        /// Album/list ID.
+        id: String,
+    },
+
+    /// Delete an album/list and all files inside it. ( alias : d )
+    #[command(alias = "d")]
+    Delete {
+        /// Album/list ID.
+        id: String,
+    },
 }

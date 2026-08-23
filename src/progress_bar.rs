@@ -1,6 +1,9 @@
 use std::{
     pin::Pin,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     task::{Context, Poll},
     time::Duration,
 };
@@ -9,11 +12,12 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use tokio::io::{AsyncRead, ReadBuf};
 
 // Progress manager for single and multi-file uploads.
+#[derive(Clone)]
 pub struct UploadProgress {
     pub multi_pb: MultiProgress,
     pub overall_pb: ProgressBar,
     pub total_files: usize,
-    files_done: AtomicUsize,
+    files_done: Arc<AtomicUsize>,
 }
 
 impl UploadProgress {
@@ -29,7 +33,7 @@ impl UploadProgress {
                     "  ↳ {msg} [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}) ETA: {eta}",
                 )
                 .unwrap()
-                .progress_chars("█▉▊▇▆▅▃▂▁ "),
+                .progress_chars("=>-"),
             );
         } else {
             overall_pb.set_style(
@@ -37,7 +41,7 @@ impl UploadProgress {
                     "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}) ETA: {eta} | {msg}",
                 )
                 .unwrap()
-                .progress_chars("█▉▊▇▆▅▃▂▁ "),
+                .progress_chars("=>-"),
             );
             overall_pb.set_message(format!("0/{} files", total_files));
         }
@@ -48,7 +52,7 @@ impl UploadProgress {
             multi_pb,
             overall_pb,
             total_files,
-            files_done: AtomicUsize::new(0),
+            files_done: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -59,8 +63,10 @@ impl UploadProgress {
     // Progress Bar per File.
     // If uploading only 1 file, re-uses overall_pb so only 1 progress bar is rendered.
     pub fn file_started(&self, filename: &str, file_size: u64) -> ProgressBar {
+        let safe_name = truncate_filename(filename, 30);
+
         if self.is_single_file() {
-            self.overall_pb.set_message(filename.to_string());
+            self.overall_pb.set_message(safe_name);
             self.overall_pb.clone()
         } else {
             let progress_bar = self
@@ -72,10 +78,10 @@ impl UploadProgress {
                     "  ↳ {msg} [{wide_bar:.magenta/dim.magenta}] {bytes}/{total_bytes} ({bytes_per_sec}) ETA: {eta}",
                 )
                 .unwrap()
-                .progress_chars("█▉▊▇▆▅▃▂▁ "),
+                .progress_chars("=>-"),
             );
 
-            progress_bar.set_message(filename.to_string());
+            progress_bar.set_message(safe_name);
             progress_bar.enable_steady_tick(Duration::from_millis(100));
             progress_bar
         }
@@ -124,12 +130,7 @@ pub struct ProgressReader<R> {
 }
 
 impl<R> ProgressReader<R> {
-    pub fn new(
-        inner: R,
-        file_pb: ProgressBar,
-        overall_pb: ProgressBar,
-        is_multi: bool,
-    ) -> Self {
+    pub fn new(inner: R, file_pb: ProgressBar, overall_pb: ProgressBar, is_multi: bool) -> Self {
         Self {
             inner,
             file_pb,
@@ -155,5 +156,15 @@ impl<R: AsyncRead + Unpin> AsyncRead for ProgressReader<R> {
             }
         }
         result
+    }
+}
+
+// truncate long filenames
+fn truncate_filename(name: &str, max_len: usize) -> String {
+    if name.chars().count() <= max_len {
+        name.to_string()
+    } else {
+        let truncated: String = name.chars().take(max_len - 3).collect();
+        format!("{}...", truncated)
     }
 }

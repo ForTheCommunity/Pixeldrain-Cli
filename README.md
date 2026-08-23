@@ -16,6 +16,9 @@ A simple command-line client for uploading files and directories to [Pixeldrain]
 - Filter files by extension
 - Upload files in natural order
 - Create a Pixeldrain album from uploaded files
+- List all albums/lists in your account
+- View files within an album/list
+- Delete albums and all contained files
 - Securely store your Pixeldrain API key locally
 - Encrypt the API key using a user-provided password
 
@@ -112,6 +115,36 @@ pixeldrain-cli upload -p ./videos -a "My Videos"
 
 After the files are uploaded, the CLI creates a Pixeldrain album containing the uploaded files.
 
+## List albums
+
+List all albums/lists in your account:
+
+```bash
+pixeldrain-cli album list
+# or using alias:
+pixeldrain-cli album l
+```
+
+## List files in an album
+
+List all files inside an album/list:
+
+```bash
+pixeldrain-cli album files <album_id>
+# or using alias:
+pixeldrain-cli album f <album_id>
+```
+
+## Delete an album
+
+Delete an album and all files inside it:
+
+```bash
+pixeldrain-cli album delete <album_id>
+# or using alias:
+pixeldrain-cli album d <album_id>
+```
+
 ## Command Reference
 
 ## `login`
@@ -140,6 +173,41 @@ Example:
 ```bash
 pixeldrain-cli upload -p ./movies ./series -a "My Collection" -f mp4 mkv
 ```
+
+## `album`
+
+```text
+pixeldrain-cli album <SUBCOMMAND>
+```
+
+Manage albums/lists in your account.
+
+| Subcommand | Alias | Description |
+|------------|-------|-------------|
+| `list` | `l` | List all albums/lists in your account |
+| `files <id>` | `f` | List all files inside an album/list |
+| `delete <id>` | `d` | Delete an album/list and all files inside it |
+
+Examples:
+
+```bash
+# List all albums
+pixeldrain-cli album list
+
+# List files in album
+pixeldrain-cli album files <album_id>
+
+# Delete an album and its files
+pixeldrain-cli album delete <album_id>
+```
+
+## `about`
+
+```text
+pixeldrain-cli about
+```
+
+Display information about the project.
 
 ## API Key Security
 
