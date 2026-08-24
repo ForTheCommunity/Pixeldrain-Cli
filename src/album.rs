@@ -94,38 +94,7 @@ impl AlbumAction {
 
     pub async fn delete(album_id: &str) -> Result<()> {
         let api_key = auth::get_api_key()?;
-        let http_c = reqwest::Client::new();
-
-        println!("  Deleting album....");
-
-        let response = http_c
-            .delete(format!("https://pixeldrain.com/api/list/{}", album_id))
-            .basic_auth("", Some(api_key.clone()))
-            .send()
-            .await?;
-
-        if response.status().is_success() {
-            println!("  Album Deleted Succesfully.");
-        } else {
-            let text = response.text().await.unwrap_or_default();
-
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                let message = json
-                    .get("message")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or(&text);
-                let value = json
-                    .get("value")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown");
-
-                eprintln!("  Error deleting album. [{}]: {}", value, message);
-            } else {
-                // Fallback if the response isn't valid JSON
-                eprintln!("  Error deleting album: {}", text);
-            }
-        }
-
+        Self::delete_with_key(album_id, &api_key).await?;
         Ok(())
     }
 
@@ -149,6 +118,9 @@ impl AlbumAction {
                 println!("  Album has 0 files. Which isn't possible, it can be a bug.");
                 return Ok(());
             }
+
+            // first : deleting album itself.
+            Self::delete_with_key(album_id, &api_key).await?;
 
             // Shared thread-safe counter for deleted files
             let deleted_count = Arc::new(AtomicUsize::new(0));
@@ -190,16 +162,47 @@ impl AlbumAction {
 
             // Await all tasks to complete
             while let Some(_res) = set.join_next().await {}
-            println!(
-                "\n  Finished deleting album contents. Deleted {}/{} files.",
-                deleted_count.load(Ordering::SeqCst),
-                total_files
-            );
+            println!("\n  Finished deleting album contents.");
         } else {
             println!(
                 "  Failed to fetch albums, Status Code : {}",
                 response.status()
             );
+        }
+
+        Ok(())
+    }
+
+    async fn delete_with_key(album_id: &str, api_key: &str) -> Result<()> {
+        let http_c = reqwest::Client::new();
+
+        println!("  Deleting album....");
+
+        let response = http_c
+            .delete(format!("https://pixeldrain.com/api/list/{}", album_id))
+            .basic_auth("", Some(api_key.to_string()))
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            println!("  Album Deleted Successfully.");
+        } else {
+            let text = response.text().await.unwrap_or_default();
+
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+                let message = json
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&text);
+                let value = json
+                    .get("value")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+
+                eprintln!("  Error deleting album. [{}]: {}", value, message);
+            } else {
+                eprintln!("  Error deleting album: {}", text);
+            }
         }
 
         Ok(())
