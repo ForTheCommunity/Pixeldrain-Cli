@@ -52,10 +52,18 @@ pub enum AlbumActions {
         id: String,
     },
 
-    /// Delete an album/list and all files inside it. ( alias : d )
+    /// Delete an album/list [ files inside it won't be deleted ] ( alias : d )
     #[command(alias = "d")]
     Delete {
         /// Album/list ID.
         id: String,
     },
+
+    /// Hard Delete an album/list and all files inside it. ( alias : hd )
+    #[command(alias = "hd")]
+    HardDelete {
+        /// Album/list ID.
+        id: String,
+    },
+    
 }

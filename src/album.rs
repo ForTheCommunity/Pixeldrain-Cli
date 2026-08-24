@@ -96,6 +96,43 @@ impl AlbumAction {
         let api_key = auth::get_api_key()?;
         let http_c = reqwest::Client::new();
 
+        println!("  Deleting album....");
+
+        let response = http_c
+            .delete(format!("https://pixeldrain.com/api/list/{}", album_id))
+            .basic_auth("", Some(api_key.clone()))
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            println!("  Album Deleted Succesfully.");
+        } else {
+            let text = response.text().await.unwrap_or_default();
+
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+                let message = json
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(&text);
+                let value = json
+                    .get("value")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+
+                eprintln!("  Error deleting album. [{}]: {}", value, message);
+            } else {
+                // Fallback if the response isn't valid JSON
+                eprintln!("  Error deleting album: {}", text);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn hard_delete(album_id: &str) -> Result<()> {
+        let api_key = auth::get_api_key()?;
+        let http_c = reqwest::Client::new();
+
         println!("  Fetching Files...");
 
         let response = http_c

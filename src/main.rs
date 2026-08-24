@@ -59,6 +59,12 @@ async fn main() {
                     println!("Error -> {}", e)
                 }
             },
+            AlbumActions::HardDelete { id } => match AlbumAction::hard_delete(&id).await {
+                Ok(_) => {}
+                Err(e) => {
+                    println!("Error -> {}", e)
+                }
+            },
         },
 
         Some(Commands::About) => {
