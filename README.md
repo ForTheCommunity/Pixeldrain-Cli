@@ -10,17 +10,26 @@ A simple command-line client for uploading files and directories to [Pixeldrain]
 
 ## ❖ Features
 
-- Upload individual files
-- Upload multiple files at once
-- Upload directories recursively
-- Filter files by extension
-- Upload files in natural order
-- Create a Pixeldrain album from uploaded files
-- List all albums/lists in your account
-- View files within an album/list
-- Delete albums and all contained files
-- Securely store your Pixeldrain API key locally
-- Encrypt the API key using a user-provided password
+## ❖ Features
+
+- **Upload individual files** to Pixeldrain
+- **Batch upload multiple files** in a single command
+- **Recursive directory uploads** — automatically discovers files inside subdirectories
+- **Filter uploads by file extension** (e.g. `mp4`, `jpg`, `png`)
+- **Natural file ordering** for predictable upload sequences
+- **Concurrent uploads** for smaller files
+- **Real-time progress tracking** with per-file and overall progress
+- **Persistent upload state** — resume interrupted uploads without re-uploading completed files [[using a state file](#-save-progress-of-uploaded-files-so-it-upload-can-be-resumed-later)].
+- **File-size validation** — detect modified files and automatically upload them again [[using a state file](#-save-progress-of-uploaded-files-so-it-upload-can-be-resumed-later)].
+- **Optional automatic deletion** of local files after successful upload
+- **Create Pixeldrain albums/lists** from uploaded files
+- **Automatic album updates** — add newly uploaded files to existing albums
+- **Automatically save and reuse album IDs** through the upload state [[using a state file](#-save-progress-of-uploaded-files-so-it-upload-can-be-resumed-later)].
+- **List albums/lists** in your Pixeldrain account
+- **View files contained in an album/list**
+- **Delete albums/lists and their contained files**
+- **Secure local API-key storage**
+- **Password-based API-key encryption**
 
 ## ❖ Installation
 
@@ -303,11 +312,8 @@ The CLI uses the platform's appropriate application-data directory rather than p
 
 
 ## ❖ Todos :
-
-- [ ] Resume interrupted uploads | save state/progres of uploaded files and resume uploading remaining files.
-- [ ] Parallel uploads
-- [ ] Configurable upload concurrency
-- [ ] More detailed error handling
+- [ ] Improve code quality.
+- [ ] Configurable upload concurrency.
 
 
 ## ❖ Support
@@ -328,3 +334,7 @@ This project is licensed under the **[Unlicense](https://unlicense.org)**. You c
 This project is an unofficial command-line client for Pixeldrain.
 
 Pixeldrain is a trademark/service of [Fornax](https://fornaxian.tech).
+
+
+## Contributors :
+1. ✦ [ ⧼ Shaswot Nepal ⧽ ](https://ShaswotDhungana.com.np) &nbsp;&nbsp;&nbsp; ｢ Maintainer ｣
