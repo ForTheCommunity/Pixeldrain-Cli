@@ -172,7 +172,7 @@ Manage albums/lists in your account.
 |------------|-------|-------------|
 | `list` | `l` | List all albums/lists in your account |
 | `files <id>` | `f` | List all files inside an album/list |
-| `delete <id>` | `d` | Delete an album/list and all files inside it |
+| `delete <id>` | `d` | Delete an album only |
 | `hard-delete <id>` | `hd` | Hard Delete an album/list and all files inside it |
 
 ## ✦ List albums
