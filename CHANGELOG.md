@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.4] - 2026-08-25
+- added feature to Move Uploaded files to already existing album/list.
+- added feature to resume upload using a state file to track upload.
+
 ## [0.1.3] - 2026-08-23
 - added feature to manage album/lists.
 - improved files uploading.

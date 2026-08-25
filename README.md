@@ -1,4 +1,4 @@
-# Pixeldrain CLI
+# 🛠 Pixeldrain CLI
 
 A simple command-line client for uploading files and directories to [Pixeldrain](https://pixeldrain.com).
 
@@ -8,7 +8,7 @@ A simple command-line client for uploading files and directories to [Pixeldrain]
 ![pixeldrain-cli upload](https://github.com/ForTheCommunity/Assets/blob/main/pixeldrain-cli/pixeldrain-cli_upload.gif?raw=true)
 <br>
 
-## Features
+## ❖ Features
 
 - Upload individual files
 - Upload multiple files at once
@@ -22,21 +22,19 @@ A simple command-line client for uploading files and directories to [Pixeldrain]
 - Securely store your Pixeldrain API key locally
 - Encrypt the API key using a user-provided password
 
-## Installation
+## ❖ Installation
 
-## --> Download | Install :
-
-## # Download binaries from [releases](https://github.com/ForTheCommunity/Pixeldrain-Cli/releases) Page.
+## ✦ Download binaries from [releases](https://github.com/ForTheCommunity/Pixeldrain-Cli/releases) Page.
 
 > Binaries are available for Windows OS and Mac OS but are not tested on these platforms.
 > App is only tested on Linux Platform.
 
-## # Install using [AppMan](https://github.com/ivan-hc/AppMan) / [AM](https://github.com/ivan-hc/AM).
+## ✦ Install using [AppMan](https://github.com/ivan-hc/AppMan) / [AM](https://github.com/ivan-hc/AM).
 ```
 appman install pixeldrain-cli
 ```
 
-## Usage
+## ❖ Usage
 
 Run:
 
@@ -44,7 +42,7 @@ Run:
 pixeldrain-cli --help
 ```
 
-## Login
+# ❖ Login
 
 Before uploading files, configure your Pixeldrain API key:
 
@@ -56,19 +54,35 @@ The CLI will ask for your API key and a password.
 
 The API key is encrypted before being stored locally.
 
-## Upload a file
+# ❖ Upload
+
+```text
+pixeldrain-cli upload [OPTIONS]
+```
+
+| Option | Long form | Description |
+|--------|-----------|-------------|
+| `-p` | `--paths` | File or directory paths to upload |
+| `-a` | `--album` | Create an album with the uploaded files |
+| `-i` | `--album-id` | Add uploaded files to an already existing album/list |
+| `-f` | `--formats` | File extensions to upload |
+| `-d` | `--delete` | delete uploaded files from local storage device [HDD / SSD] |
+| `-s` | `--state` | Path to a state file for tracking uploaded files and resuming uploads |
+
+
+## ✦ Upload a file
 
 ```bash
 pixeldrain-cli upload -p video.mp4
 ```
 
-## Upload multiple files
+## ✦ Upload multiple files
 
 ```bash
 pixeldrain-cli upload -p video.mp4 movie.mkv image.jpg
 ```
 
-## Upload a directory
+## ✦ Upload a directory
 
 ```bash
 pixeldrain-cli upload -p ./videos
@@ -76,13 +90,13 @@ pixeldrain-cli upload -p ./videos
 
 Directories are searched recursively.
 
-## Upload files and directories together
+## ✦ Upload files and directories together
 
 ```bash
 pixeldrain-cli upload -p video.mp4  ~/Downloads/Videos/ -p ~/Downloads/Photos/
 ```
 
-## Filter by file format
+## ✦ Filter by file format
 
 Use `-f` / `--formats` to upload only specific file types:
 
@@ -96,7 +110,7 @@ You can also use extensions with a leading dot:
 pixeldrain-cli upload -p ./videos -f .mp4 .mkv
 ```
 
-## Delete files after upload
+## ✦ Delete files after upload
 
 Use `-d` / `--delete` to automatically delete local files after they have been successfully uploaded to Pixeldrain:
 
@@ -105,7 +119,7 @@ pixeldrain-cli upload -p ./videos -f mp4 mkv -d
 ```
 
 
-## Create an album
+## ✦ Create an album
 
 Use `-a` / `--album`:
 
@@ -115,7 +129,7 @@ pixeldrain-cli upload -p ./videos -a "My Videos"
 
 After the files are uploaded, the CLI creates a Pixeldrain album containing the uploaded files.
 
-## Move Uploaded files to already existing album/list
+## ✦ Move Uploaded files to already existing album/list
 
 Use `-i` / `--album-id`:
 
@@ -125,67 +139,28 @@ pixeldrain-cli upload -p ./videos/ -i <Album ID>
 
 After the files are uploaded, the CLI adds those files into specified albumn.
 
-## List albums
+## ✦ Save progress of uploaded files, so it upload can be resumed later.
 
-List all albums/lists in your account:
-
-```bash
-pixeldrain-cli album list
-# or using alias:
-pixeldrain-cli album l
-```
-
-## List files in an album
-
-List all files inside an album/list:
+Use `-s` / `--state`:
 
 ```bash
-pixeldrain-cli album files <album_id>
-# or using alias:
-pixeldrain-cli album f <album_id>
+# Creating state for first time
+pixeldrain-cli upload -p ./videos/ --state <path-to-state-file>
+# or using short flag:
+pixeldrain-cli upload -p ./videos/ -a "My Videos" -s ./videos_upload_state
+# state file is a JSON file but not necessary to give file extension for state file.
 ```
-
-## Delete an album
-
-Delete an album and all files inside it:
 
 ```bash
-pixeldrain-cli album delete <album_id>
-# or using alias:
-pixeldrain-cli album d <album_id>
+# Resume uploads:
+pixeldrain-cli upload -p ./videos/ -a "My Videos" -s ./videos_upload_state
+# Once pixeldrain album is created
+pixeldrain-cli upload -p ./videos/ -s ./videos_upload_state
+# albumn id is also stored in state file once album is created in pixeldrain.
 ```
+After the files are uploaded, the CLI adds those files into specified albumn.
 
-## Command Reference
-
-## `login`
-
-```text
-pixeldrain-cli login
-```
-
-Configure and securely store your Pixeldrain API key.
-
-## `upload`
-
-```text
-pixeldrain-cli upload [OPTIONS]
-```
-
-| Option | Long form | Description |
-|--------|-----------|-------------|
-| `-p` | `--paths` | File or directory paths to upload |
-| `-a` | `--album` | Create an album with the uploaded files |
-| `-i` | `--album-id` | Add uploaded files to an already existing album/list |
-| `-f` | `--formats` | File extensions to upload |
-| `-d` | `--delete` | delete uploaded files from local storage device [HDD / SSD] |
-
-Example:
-
-```bash
-pixeldrain-cli upload -p ./movies ./series -a "My Collection" -f mp4 mkv
-```
-
-## `album`
+## ❖ Album
 
 ```text
 pixeldrain-cli album <SUBCOMMAND>
@@ -198,21 +173,65 @@ Manage albums/lists in your account.
 | `list` | `l` | List all albums/lists in your account |
 | `files <id>` | `f` | List all files inside an album/list |
 | `delete <id>` | `d` | Delete an album/list and all files inside it |
+| `hard-delete <id>` | `hd` | Hard Delete an album/list and all files inside it |
+
+## ✦ List albums
+
+List all albums/lists in your account:
+
+```bash
+pixeldrain-cli album list
+# or using alias:
+pixeldrain-cli album l
+```
+
+## ✦ List files in an album
+
+List all files inside an album/list:
+
+```bash
+pixeldrain-cli album files <album_id>
+# or using alias:
+pixeldrain-cli album f <album_id>
+```
+
+## ✦ Delete an album
+
+Delete an album only:
+
+```bash
+pixeldrain-cli album delete <album_id>
+# or using alias:
+pixeldrain-cli album d <album_id>
+```
+
+## ✦ Delete an album & all files inside it.
+
+This action deletes album and files of that album permanently !!! :
+
+```bash
+pixeldrain-cli album hard-delete <album_id>
+# or using alias:
+pixeldrain-cli album hd <album_id>
+```
 
 Examples:
 
 ```bash
 # List all albums
-pixeldrain-cli album list
+pixeldrain-cli album l
 
 # List files in album
-pixeldrain-cli album files <album_id>
+pixeldrain-cli album f <album_id>
+
+# Delete an album
+pixeldrain-cli album d <album_id>
 
 # Delete an album and its files
-pixeldrain-cli album delete <album_id>
+pixeldrain-cli album hd <album_id>
 ```
 
-## `about`
+## ❖ About
 
 ```text
 pixeldrain-cli about
@@ -220,7 +239,7 @@ pixeldrain-cli about
 
 Display information about the project.
 
-## API Key Security
+## ❖ API Key Security
 
 The CLI does not store the API key as plain text.
 
@@ -248,13 +267,13 @@ The encryption key is derived from the user's password using Argon2, and the API
 
 > Keep your encryption password safe. If you lose it, the stored API key cannot be recovered.
 
-## Storage
+## ❖ Storage
 
 The encrypted credentials are stored in the platform's standard application-data directory.
 
 The exact location depends on the operating system.
 
-## Linux
+## ✦ Linux
 
 Typically:
 
@@ -262,7 +281,7 @@ Typically:
 ~/.local/share/pixeldrain-cli/
 ```
 
-## macOS
+## ✦ macOS
 
 Typically:
 
@@ -270,7 +289,7 @@ Typically:
 ~/Library/Application Support/pixeldrain-cli/
 ```
 
-## Windows
+## ✦ Windows
 
 Typically:
 
@@ -283,7 +302,7 @@ The CLI uses the platform's appropriate application-data directory rather than p
 
 
 
-## Todos :
+## ❖ Todos :
 
 - [ ] Resume interrupted uploads | save state/progres of uploaded files and resume uploading remaining files.
 - [ ] Parallel uploads
@@ -291,21 +310,21 @@ The CLI uses the platform's appropriate application-data directory rather than p
 - [ ] More detailed error handling
 
 
-## Support
+## ❖ Support
 If you find this project useful, consider supporting its development.
 <br>
 **Monero (XMR):**
 `83eg4LiD5PEWGu6JpU2mfQVmVdNJQfKzGAi5GUGZKBkBdWBaGxxUrifCj1WyiUEtUfLNaxQjcfHDaDtxfZhr7RboPCVvTYf`
 
 
-## License
+## ❖ License
 
 This project is licensed under the **[Unlicense](https://unlicense.org)**. You can view the full license text in the [UNLICENSE](./UNLICENSE) file.
 
 
 
-## Disclaimer
+## ❖ Disclaimer
 
 This project is an unofficial command-line client for Pixeldrain.
 
-Pixeldrain is a trademark/service of [Fornax](https://twitter.com/Fornax96).
+Pixeldrain is a trademark/service of [Fornax](https://fornaxian.tech).

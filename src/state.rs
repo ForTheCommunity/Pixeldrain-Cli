@@ -115,4 +115,10 @@ impl UploadState {
     pub fn set_album_id(&mut self, album_id: String) {
         self.album_id = Some(album_id);
     }
+
+    // Returns the Pixeldrain file IDs of all successfully uploaded files
+    // currently recorded in the state.
+    pub fn get_all_file_ids(&self) -> Vec<String> {
+        self.files.values().map(|file| file.id.clone()).collect()
+    }
 }
