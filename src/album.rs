@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use crate::auth;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use humansize::{DECIMAL, format_size};
 use serde::{Deserialize, Serialize};
 use tabled::{
@@ -48,7 +48,29 @@ impl AlbumAction {
         Ok(())
     }
 
-    pub async fn all_files(album_id: &str) -> Result<()> {
+    pub async fn show_all_files(res_data: AlbumDetailResponse) {
+        // showing data in table,
+        let rows: Vec<TableFileRow> = res_data
+            .files
+            .into_iter()
+            .map(|file| TableFileRow {
+                id: file.id,
+                name: file.name,
+                size: format_size(file.size, DECIMAL),
+                date_upload: file.date_upload,
+                mime_type: file.mime_type,
+            })
+            .collect();
+
+        // Render table using the presentation struct
+        let mut table = tabled::Table::new(rows);
+        let table_style = Style::modern();
+        let alignment = Alignment::center();
+        table.with(table_style).with(alignment);
+        println!("{table}");
+    }
+
+    pub async fn all_files(album_id: &str) -> Result<AlbumDetailResponse> {
         let api_key = auth::get_api_key()?;
         let response = reqwest::Client::new()
             .get(format!("https://pixeldrain.com/api/list/{}", album_id))
@@ -59,37 +81,20 @@ impl AlbumAction {
             let res_data: AlbumDetailResponse = response.json().await?;
 
             if res_data.files.is_empty() {
-                println!("  Albumn has 0 files. which isn't possible, it can be a bug.");
-                return Ok(());
+                let msg = "  Albumn has 0 files. which isn't possible, it can be a bug.";
+                println!("{msg}");
+                return Err(anyhow!(msg));
             }
 
-            // showing data in table,
-            let rows: Vec<TableFileRow> = res_data
-                .files
-                .into_iter()
-                .map(|file| TableFileRow {
-                    id: file.id,
-                    name: file.name,
-                    size: format_size(file.size, DECIMAL),
-                    date_upload: file.date_upload,
-                    mime_type: file.mime_type,
-                })
-                .collect();
-
-            // Render table using the presentation struct
-            let mut table = tabled::Table::new(rows);
-            let table_style = Style::modern();
-            let alignment = Alignment::center();
-            table.with(table_style).with(alignment);
-            println!("{table}");
+            Ok(res_data)
         } else {
-            println!(
+            let msg = format!(
                 "  Failed to fetch albums, Status Code : {}",
                 response.status()
-            )
+            );
+            println!("{msg}");
+            Err(anyhow!(msg))
         }
-
-        Ok(())
     }
 
     pub async fn delete(album_id: &str) -> Result<()> {
@@ -204,6 +209,95 @@ impl AlbumAction {
                 eprintln!("  Error deleting album: {}", text);
             }
         }
+
+        Ok(())
+    }
+
+    pub async fn add_files_to_album(
+        http_c: &reqwest::Client,
+        api_key: &str,
+        album_id: &str,
+        new_file_ids: &[String],
+    ) -> Result<()> {
+        if new_file_ids.is_empty() {
+            return Err(anyhow::anyhow!(
+                "No successfully uploaded files to add to album"
+            ));
+        }
+
+        let url = format!("https://pixeldrain.com/api/list/{}", album_id);
+
+        // Getting existing album
+        let response = http_c
+            .get(&url)
+            .basic_auth("", Some(api_key))
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+
+            return Err(anyhow::anyhow!(
+                "Failed to get album '{}': HTTP {}: {}",
+                album_id,
+                status,
+                body
+            ));
+        }
+
+        let album: AlbumDetailResponse = response.json().await?;
+
+        // Building complete file list
+        let mut files = album
+            .files
+            .into_iter()
+            .map(|file| {
+                serde_json::json!({
+                    "id": file.id
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for file_id in new_file_ids {
+            files.push(serde_json::json!({
+                "id": file_id
+            }));
+        }
+
+        // Updating Album
+        let body = serde_json::json!({
+            "title": album.title,
+            "files": files
+        });
+
+        let response = http_c
+            .put(&url)
+            .basic_auth("", Some(api_key))
+            .json(&body)
+            .send()
+            .await?;
+
+        let status = response.status();
+
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+
+            return Err(anyhow::anyhow!(
+                "Failed to update album '{}': HTTP {}: {}",
+                album_id,
+                status,
+                body
+            ));
+        }
+
+        println!(
+            "  ✓ Added {} file(s) to album '{}'.",
+            new_file_ids.len(),
+            album.title
+        );
+
+        println!("  https://pixeldrain.com/l/{}", album_id);
 
         Ok(())
     }

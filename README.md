@@ -115,6 +115,16 @@ pixeldrain-cli upload -p ./videos -a "My Videos"
 
 After the files are uploaded, the CLI creates a Pixeldrain album containing the uploaded files.
 
+## Move Uploaded files to already existing album/list
+
+Use `-i` / `--album-id`:
+
+```bash
+pixeldrain-cli upload -p ./videos/ -i <Album ID>
+```
+
+After the files are uploaded, the CLI adds those files into specified albumn.
+
 ## List albums
 
 List all albums/lists in your account:
@@ -165,6 +175,7 @@ pixeldrain-cli upload [OPTIONS]
 |--------|-----------|-------------|
 | `-p` | `--paths` | File or directory paths to upload |
 | `-a` | `--album` | Create an album with the uploaded files |
+| `-i` | `--album-id` | Add uploaded files to an already existing album/list |
 | `-f` | `--formats` | File extensions to upload |
 | `-d` | `--delete` | delete uploaded files from local storage device [HDD / SSD] |
 

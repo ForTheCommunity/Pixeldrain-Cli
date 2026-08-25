@@ -9,6 +9,7 @@ use serde::Deserialize;
 use tokio::sync::Mutex;
 
 use crate::{
+    album::AlbumAction,
     auth,
     progress_bar::{ProgressReader, UploadProgress},
 };
@@ -16,6 +17,7 @@ use crate::{
 pub async fn upload(
     paths: &[PathBuf],
     album: Option<&str>,
+    album_id: Option<&str>,
     formats: Option<&[String]>,
     delete: bool,
 ) -> Result<()> {
@@ -26,6 +28,10 @@ pub async fn upload(
     if files.is_empty() {
         println!("  No matching files found.");
         return Ok(());
+    }
+
+    if album.is_some() && album_id.is_some() {
+        bail!("Cannot use --album and --album-id together");
     }
 
     let total_files = files.len();
@@ -107,19 +113,51 @@ pub async fn upload(
 
                 match res {
                     Ok(response) if response.status().is_success() => {
-                        if let Ok(json_res) = response.json::<UploadResponse>().await {
-                            file_ids.lock().await.push(json_res.id);
-                            progress_bar.file_finished(&file_pb, filename, true);
+                        match response.json::<UploadResponse>().await {
+                            Ok(json_res) => {
+                                file_ids.lock().await.push(json_res.id);
 
-                            if delete {
-                                let _ = tokio::fs::remove_file(&a_file).await;
+                                progress_bar.file_finished(&file_pb, filename, true);
+
+                                if delete {
+                                    if let Err(e) = tokio::fs::remove_file(&a_file).await {
+                                        progress_bar.overall_pb.println(format!(
+                                            "  ⚠ Failed to delete {}: {}",
+                                            filename, e
+                                        ));
+                                    }
+                                }
                             }
-                        } else {
-                            progress_bar.file_finished(&file_pb, filename, false);
+
+                            Err(e) => {
+                                progress_bar.file_finished(&file_pb, filename, false);
+
+                                progress_bar.overall_pb.println(format!(
+                                    "  ⚠ Invalid upload response for {}: {}",
+                                    filename, e
+                                ));
+                            }
                         }
                     }
-                    _ => {
+
+                    Ok(response) => {
+                        let status = response.status();
+                        let body = response.text().await.unwrap_or_default();
+
                         progress_bar.file_finished(&file_pb, filename, false);
+
+                        progress_bar.overall_pb.println(format!(
+                            "  ⚠ Upload failed for {}: HTTP {}: {}",
+                            filename, status, body
+                        ));
+                    }
+
+                    Err(e) => {
+                        progress_bar.file_finished(&file_pb, filename, false);
+
+                        progress_bar
+                            .overall_pb
+                            .println(format!("  ⚠ Upload request failed for {}: {}", filename, e));
                     }
                 }
             });
@@ -191,30 +229,62 @@ pub async fn upload(
         };
 
         if status.is_success() {
-            if let Ok(response_json) = serde_json::from_str::<UploadResponse>(&body) {
-                file_ids.lock().await.push(response_json.id);
-                progress_bar.file_finished(&file_pb, filename, true);
+            match serde_json::from_str::<UploadResponse>(&body) {
+                Ok(response_json) => {
+                    file_ids.lock().await.push(response_json.id);
 
-                if delete {
-                    let _ = tokio::fs::remove_file(&a_file).await;
+                    progress_bar.file_finished(&file_pb, filename, true);
+
+                    if delete {
+                        if let Err(e) = tokio::fs::remove_file(&a_file).await {
+                            progress_bar
+                                .overall_pb
+                                .println(format!("  ⚠ Failed to delete {}: {}", filename, e));
+                        }
+                    }
                 }
-            } else {
-                progress_bar.file_finished(&file_pb, filename, false);
+
+                Err(e) => {
+                    progress_bar.file_finished(&file_pb, filename, false);
+
+                    progress_bar.overall_pb.println(format!(
+                        "  ⚠ Invalid upload response for {}: {}",
+                        filename, e
+                    ));
+                }
             }
         } else {
             progress_bar.file_finished(&file_pb, filename, false);
+
+            progress_bar.overall_pb.println(format!(
+                "  ⚠ Upload failed for {}: HTTP {}: {}",
+                filename, status, body
+            ));
         }
     }
 
     progress_bar.all_finished();
 
     // Create album with successfully uploaded files.
-    let final_file_ids = file_ids.lock().await;
+    // Get successfully uploaded file IDs.
+    let final_file_ids = file_ids.lock().await.clone();
+
     if let Some(album_name) = album {
         if !final_file_ids.is_empty() {
             if let Err(e) = create_album(&http_c, &api_key, album_name, &final_file_ids).await {
                 eprintln!("  ⚠ Failed to create album '{}': {}", album_name, e);
             }
+        }
+    }
+
+    // Adding uploaded files to existing album
+    if let Some(album_id) = album_id {
+        if final_file_ids.is_empty() {
+            eprintln!("  ⚠ No files were successfully uploaded.");
+        } else if let Err(e) =
+            AlbumAction::add_files_to_album(&http_c, &api_key, album_id, &final_file_ids).await
+        {
+            eprintln!("  ⚠ Failed to update album '{}': {}", album_id, e);
         }
     }
 

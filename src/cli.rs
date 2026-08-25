@@ -20,6 +20,9 @@ pub enum Commands {
         /// Move uploaded files to a new album \ list.
         #[arg(short = 'a', long)]
         album: Option<String>,
+        /// Add uploaded files to an already existing album/list by its ID.
+        #[arg(short = 'i', long, conflicts_with = "album")]
+        album_id: Option<String>,
         /// File Format Filter, only files with specified filter will be upload.
         /// eg : -f mp4 mkv jpeg
         #[arg(short = 'f', long, num_args = 1..)]
@@ -65,5 +68,4 @@ pub enum AlbumActions {
         /// Album/list ID.
         id: String,
     },
-    
 }

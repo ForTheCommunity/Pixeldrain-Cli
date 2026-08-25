@@ -19,6 +19,7 @@ async fn main() {
         Some(Commands::Upload {
             paths,
             album,
+            album_id,
             formats,
             delete,
         }) => {
@@ -33,7 +34,15 @@ async fn main() {
                 return;
             }
 
-            match upload(paths, album.as_deref(), formats.as_deref(), *delete).await {
+            match upload(
+                paths,
+                album.as_deref(),
+                album_id.as_deref(),
+                formats.as_deref(),
+                *delete,
+            )
+            .await
+            {
                 Ok(_a) => {}
                 Err(e) => println!("Error -> {}", e),
             }
@@ -48,7 +57,9 @@ async fn main() {
             },
 
             AlbumActions::Files { id } => match AlbumAction::all_files(&id).await {
-                Ok(_) => {}
+                Ok(res) => {
+                    AlbumAction::show_all_files(res).await;
+                }
                 Err(e) => {
                     println!("Error -> {}", e)
                 }
