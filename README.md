@@ -10,8 +10,6 @@ A simple command-line client for uploading files and directories to [Pixeldrain]
 
 ## ❖ Features
 
-## ❖ Features
-
 - **Upload individual files** to Pixeldrain
 - **Batch upload multiple files** in a single command
 - **Recursive directory uploads** — automatically discovers files inside subdirectories
