@@ -5,5 +5,6 @@ pub mod cli;
 pub mod crypto;
 pub mod login;
 pub mod progress_bar;
+pub mod state;
 pub mod storage;
 pub mod upload;

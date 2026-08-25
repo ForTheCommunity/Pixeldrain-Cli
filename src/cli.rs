@@ -30,6 +30,9 @@ pub enum Commands {
         /// Delete local files after they are successfully uploaded.
         #[arg(short = 'd', long)]
         delete: bool,
+        /// Path to a state file for tracking uploaded files and resuming uploads.
+        #[arg(short = 's', long)]
+        state: Option<PathBuf>,
     },
 
     /// Manage Albums/Lists

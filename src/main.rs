@@ -22,6 +22,7 @@ async fn main() {
             album_id,
             formats,
             delete,
+            state,
         }) => {
             if paths.is_empty() {
                 let mut cmd = Cli::command();
@@ -40,6 +41,7 @@ async fn main() {
                 album_id.as_deref(),
                 formats.as_deref(),
                 *delete,
+                state,
             )
             .await
             {
@@ -56,7 +58,7 @@ async fn main() {
                 }
             },
 
-            AlbumActions::Files { id } => match AlbumAction::all_files(&id).await {
+            AlbumActions::Files { id } => match AlbumAction::all_files(id).await {
                 Ok(res) => {
                     AlbumAction::show_all_files(res).await;
                 }
@@ -64,13 +66,13 @@ async fn main() {
                     println!("Error -> {}", e)
                 }
             },
-            AlbumActions::Delete { id } => match AlbumAction::delete(&id).await {
+            AlbumActions::Delete { id } => match AlbumAction::delete(id).await {
                 Ok(_) => {}
                 Err(e) => {
                     println!("Error -> {}", e)
                 }
             },
-            AlbumActions::HardDelete { id } => match AlbumAction::hard_delete(&id).await {
+            AlbumActions::HardDelete { id } => match AlbumAction::hard_delete(id).await {
                 Ok(_) => {}
                 Err(e) => {
                     println!("Error -> {}", e)

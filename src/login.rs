@@ -16,7 +16,7 @@ pub fn login() -> Result<()> {
     let confirmation = prompt_password("Confirm password: ")?;
 
     if password != confirmation {
-        return Err(anyhow!("Password didn't matched..."))?;
+        return Err(anyhow!("Password didn't matched..."));
     }
 
     let encrypted = crypto::encrypt(&api_key, &password)?;
