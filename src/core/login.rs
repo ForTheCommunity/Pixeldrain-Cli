@@ -1,7 +1,6 @@
 use anyhow::{Result, anyhow};
-use rpassword::prompt_password;
 
-use crate::{crypto, storage};
+use crate::core::{crypto, password::prompt_password, storage};
 
 pub fn login() -> Result<()> {
     println!(
@@ -10,6 +9,7 @@ pub fn login() -> Result<()> {
     this password will be needed to decrypt API Key while uploading files so use a rememberable password.
      "
     );
+
     let api_key = prompt_password("Pixeldrain API key: ")?;
 
     let password = prompt_password("Encryption password: ")?;

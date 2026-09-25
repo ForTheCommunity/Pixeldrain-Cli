@@ -17,7 +17,6 @@ pub struct EncryptedData {
     pub cipher_text: String,
 }
 
-#[allow(unused_variables)]
 pub fn encrypt(plaintext_api: &str, password: &str) -> anyhow::Result<EncryptedData> {
     let mut salt = [0u8; SALT_LEN];
     rand::fill(&mut salt);

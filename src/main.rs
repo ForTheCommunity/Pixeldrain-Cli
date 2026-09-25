@@ -1,88 +1,45 @@
 use clap::{CommandFactory, Parser};
-use pixeldrain_cli::album::AlbumAction;
-use pixeldrain_cli::cli::{AlbumActions, Cli, Commands};
-use pixeldrain_cli::login::login;
-use pixeldrain_cli::upload::upload;
+use pixeldrain_cli::{
+    cli::{
+        AlbumCli, Cli, Commands,
+        commands::{AlbumHandler, upload},
+    },
+    core::login::login,
+};
 
 #[tokio::main]
 async fn main() {
     let cli_args = Cli::parse();
 
-    match &cli_args.command {
+    match cli_args.command {
         Some(Commands::Login) => {
-            match login() {
-                Ok(_a) => {}
-                Err(e) => println!("Error : {}", e),
-            };
+            if let Err(e) = login() {
+                println!("Error : {}", e);
+            }
         }
 
-        Some(Commands::Upload {
-            paths,
-            album,
-            album_id,
-            formats,
-            delete,
-            state,
-        }) => {
-            if paths.is_empty() {
+        Some(Commands::Upload(args)) => {
+            if args.paths.is_empty() {
                 let mut cmd = Cli::command();
 
-                cmd.find_subcommand_mut("upload")
-                    .unwrap()
-                    .print_help()
-                    .unwrap();
-
+                if let Some(sub) = cmd.find_subcommand_mut("upload") {
+                    let _ = sub.print_help();
+                }
                 return;
             }
 
-            match upload(
-                paths,
-                album.as_deref(),
-                album_id.as_deref(),
-                formats.as_deref(),
-                *delete,
-                state,
-            )
-            .await
-            {
-                Ok(_a) => {}
+            match upload(args).await {
+                Ok(_) => {}
                 Err(e) => println!("Error -> {}", e),
             }
         }
 
-        Some(Commands::Album { action }) => match action {
-            AlbumActions::List => match AlbumAction::list_all().await {
-                Ok(_) => {}
-                Err(e) => {
-                    println!("Error -> {}", e)
-                }
-            },
-
-            AlbumActions::Files { id } => match AlbumAction::all_files(id).await {
-                Ok(res) => {
-                    AlbumAction::show_all_files(res).await;
-                }
-                Err(e) => {
-                    println!("Error -> {}", e)
-                }
-            },
-            AlbumActions::Delete { id } => match AlbumAction::delete(id).await {
-                Ok(_) => {}
-                Err(e) => {
-                    println!("Error -> {}", e)
-                }
-            },
-            AlbumActions::HardDelete { id } => match AlbumAction::hard_delete(id).await {
-                Ok(_) => {}
-                Err(e) => {
-                    println!("Error -> {}", e)
-                }
-            },
+        Some(Commands::Album { album_cli }) => match album_cli {
+            AlbumCli::List => AlbumHandler::list_all().await,
+            AlbumCli::Files { id } => AlbumHandler::all_files(id).await,
+            AlbumCli::Delete { id } => AlbumHandler::delete(id).await,
+            AlbumCli::HardDelete { id } => AlbumHandler::hard_delete(id).await,
         },
-
-        Some(Commands::About) => {
-            pixeldrain_cli::about::print_about();
-        }
 
         None => Cli::command().print_help().expect("failed to print help"),
     }

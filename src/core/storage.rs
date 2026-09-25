@@ -3,7 +3,10 @@ use std::{fs, path::PathBuf};
 use anyhow::{Result, anyhow};
 use directories::ProjectDirs;
 
-use crate::crypto::{self, EncryptedData};
+use crate::core::{
+    crypto::{self, EncryptedData},
+    password::prompt_password,
+};
 
 pub fn project_data_dir() -> Result<PathBuf> {
     let project_dir = ProjectDirs::from("org", "forthecommunity", "pixeldrain-cli")
@@ -39,7 +42,7 @@ pub fn load_credentials() -> Result<EncryptedData> {
 }
 
 pub fn get_api_key() -> Result<String> {
-    let password = rpassword::prompt_password("Decrypt API KEY (Enter Encryption password): ")?;
+    let password = prompt_password("Decrypt API KEY (Enter Encryption password): ")?;
 
     let encrypted = load_credentials()?;
 

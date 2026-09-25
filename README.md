@@ -309,9 +309,7 @@ The CLI uses the platform's appropriate application-data directory rather than p
 
 
 
-## ❖ Todos :
-- [ ] Improve code quality.
-- [ ] Configurable upload concurrency.
+
 
 
 ## ❖ Support

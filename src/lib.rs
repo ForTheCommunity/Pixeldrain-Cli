@@ -1,10 +1,5 @@
 pub mod about;
-pub mod album;
-pub mod auth;
 pub mod cli;
-pub mod crypto;
-pub mod login;
-pub mod progress_bar;
-pub mod state;
-pub mod storage;
-pub mod upload;
+pub mod core;
+pub mod app;
+pub mod api;
