@@ -6,7 +6,7 @@ pub struct AlbumListResponse {
     pub lists: Vec<Album>,
 }
 
-#[derive(Serialize, Deserialize, Debug,Tabled)]
+#[derive(Serialize, Deserialize, Debug, Tabled)]
 pub struct Album {
     pub id: String,
     pub title: String,

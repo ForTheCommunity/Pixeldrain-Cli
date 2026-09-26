@@ -2,9 +2,9 @@ use std::fmt;
 
 use serde::Deserialize;
 
-#[derive( Deserialize,Debug)]
+#[derive(Deserialize, Debug)]
 pub struct UploadResponse {
-   pub id: String,
+    pub id: String,
 }
 
 impl fmt::Display for UploadResponse {

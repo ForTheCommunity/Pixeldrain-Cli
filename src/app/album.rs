@@ -1,11 +1,11 @@
-use std::io::Write;
+use std::{io::Write, sync::Arc};
 
-use anyhow::{Ok, Result};
+use anyhow::Result;
 use tabled::{
     Tabled,
     settings::{Alignment, Style},
 };
-use tokio::sync::mpsc;
+use tokio::sync::{Mutex, mpsc};
 
 use crate::{
     api::endpoints::album::{AlbumApi, AlbumDeleteEvent},
@@ -117,6 +117,43 @@ impl AlbumAction {
         let _ = ui_handle.await;
 
         println!("\n  Finished deleting album contents.");
+        Ok(())
+    }
+
+    // handles albulm creation or album update...
+    pub async fn update_album(
+        album_name: &str,
+        // api_client: &ApiClient,
+        api_key: &str,
+        album_state: &Arc<Mutex<Option<String>>>,
+        file_ids: &[String],
+    ) -> Result<()> {
+        if file_ids.is_empty() {
+            return Ok(());
+        }
+
+        // If album_state is None → create album with all provided IDs (batch).
+        // If album_state is Some → add all provided IDs to existing album (batch).
+
+        let mut lock = album_state.lock().await;
+
+        match lock.as_ref() {
+            None => {
+                // when first file finishes -> Create the album with this initial file
+                let album_api = AlbumApi { api_key, id: None };
+                let new_album_id = album_api.create_album(album_name, file_ids).await?;
+                *lock = Some(new_album_id);
+            }
+            Some(album_id) => {
+                // album already exists so appending new file uploads.
+                let album_api = AlbumApi {
+                    api_key,
+                    id: Some(album_id),
+                };
+                album_api.add_file(file_ids).await?;
+            }
+        }
+
         Ok(())
     }
 }

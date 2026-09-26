@@ -9,7 +9,7 @@ use crate::api::error::{ApiError, ApiResult};
 pub struct ApiClient {
     http_client: Client,
     base_url: String,
-    api_key: Option<Arc<String>>,
+    pub api_key: Option<Arc<String>>,
 }
 
 impl Default for ApiClient {

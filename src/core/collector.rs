@@ -3,7 +3,6 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-
 pub fn collect_files(
     paths: &[impl AsRef<Path>],
     formats: Option<&[String]>,
@@ -12,7 +11,6 @@ pub fn collect_files(
         return Ok(Vec::new());
     }
 
-  
     let allowed_formats: Option<HashSet<String>> = formats.map(|fmts| {
         fmts.iter()
             .map(|f| f.trim_start_matches('.').to_ascii_lowercase())
@@ -101,7 +99,6 @@ fn collect_dir_recursive(
 
     Ok(())
 }
-
 
 fn matches_format(path: &Path, formats: Option<&HashSet<String>>) -> bool {
     let Some(formats) = formats else {

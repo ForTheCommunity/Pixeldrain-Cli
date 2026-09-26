@@ -1,6 +1,7 @@
 use std::sync::{Arc, atomic::AtomicUsize};
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
+use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
 use crate::api::models::album::{AlbumDetailResponse, AlbumListResponse};
@@ -146,6 +147,104 @@ impl<'a> AlbumApi<'a> {
         drop(tx);
         // Await all background deletion tasks
         while let Some(_res) = set.join_next().await {}
+        Ok(())
+    }
+
+    // Creates an album multiple files in a single batch request.
+    pub async fn create_album(&self, album_name: &str, file_ids: &[String]) -> Result<String> {
+        let files = file_ids
+            .iter()
+            .map(|id| json!({"id": id}))
+            .collect::<Vec<Value>>();
+
+        let payload = serde_json::json!({
+            "title": album_name,
+            "files": files,
+        });
+
+        let response = reqwest::Client::new()
+            .post(format!("{}/list", API_ENDPOINT))
+            .basic_auth("", Some(self.api_key))
+            .json(&payload)
+            .send()
+            .await?;
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .context("Failed to read album creation response")?;
+
+        if !status.is_success() {
+            bail!("Failed to create album: HTTP {}\n{}", status, body);
+        }
+
+        let response_json: serde_json::Value =
+            serde_json::from_str(&body).context("Invalid album creation response")?;
+
+        let album_id = response_json
+            .get("id")
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| anyhow::anyhow!("Album response did not contain an ID"))?;
+
+        Ok(album_id.to_owned())
+    }
+
+    // Fetches the existing list, appends new file IDs,
+    // and updates the remote album in a single call.
+    pub async fn add_file(self, file_ids: &[String]) -> Result<()> {
+        // update album:
+        // 1. fetching files of a album.
+        // 2. old files ids + new file id
+        // 3. update remote album
+
+        let old_album_data = self.get_files().await?;
+
+        // Building complete file list
+        let mut files = old_album_data
+            .files
+            .into_iter()
+            .map(|file| {
+                json!({
+                    "id": file.id
+                })
+            })
+            .collect::<Vec<Value>>();
+
+        // appending new files
+        for id in file_ids {
+            files.push(json!({"id": id}));
+        }
+
+        // Updating Album
+        let body = serde_json::json!({
+            "title": &old_album_data.title,
+            "files": files
+        });
+
+        let album_id = self
+            .id
+            .ok_or_else(|| anyhow!("Album ID is not provided..."))?;
+
+        let response = reqwest::Client::new()
+            .put(format!("{}/list/{}", API_ENDPOINT, album_id))
+            .basic_auth("", Some(self.api_key))
+            .json(&body)
+            .send()
+            .await?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+
+            return Err(anyhow::anyhow!(
+                "Failed to update album '{}': HTTP {}: {}",
+                self.id.unwrap_or("NONE_ALBUM_ID"),
+                status,
+                body
+            ));
+        }
+
         Ok(())
     }
 }

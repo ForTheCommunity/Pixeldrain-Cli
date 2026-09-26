@@ -1,2 +1,2 @@
-pub mod uploader;
 pub mod album;
+pub mod uploader;

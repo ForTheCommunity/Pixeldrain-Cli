@@ -14,6 +14,7 @@ pub async fn upload(args: UploadArgs) -> Result<()> {
     let up_opts = UploadPipelineOptions {
         paths: args.paths,
         album_name: args.album,
+        album_id: args.album_id,
         delete_after: args.delete,
         formats: args.formats,
         ..Default::default()

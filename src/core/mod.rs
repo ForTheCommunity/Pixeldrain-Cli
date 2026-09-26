@@ -6,15 +6,8 @@ pub mod password;
 pub mod progress;
 pub mod storage;
 
-
 pub fn format_bytes(bytes: u64) -> String {
-    const UNITS: &[&str] = &[
-        "B",
-        "KiB",
-        "MiB",
-        "GiB",
-        "TiB",
-    ];
+    const UNITS: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB"];
 
     let mut value = bytes as f64;
     let mut unit = 0usize;
