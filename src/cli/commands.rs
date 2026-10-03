@@ -17,6 +17,7 @@ pub async fn upload(args: UploadArgs) -> Result<()> {
         album_id: args.album_id,
         delete_after: args.delete,
         formats: args.formats,
+        state: args.state,
         ..Default::default()
     };
 

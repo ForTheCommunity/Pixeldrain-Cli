@@ -1,5 +1,6 @@
 use clap::{CommandFactory, Parser};
 use pixeldrain_cli::{
+    app::about::show_about,
     cli::{
         AlbumCli, Cli, Commands,
         commands::{AlbumHandler, upload},
@@ -40,6 +41,8 @@ async fn main() {
             AlbumCli::Delete { id } => AlbumHandler::delete(id).await,
             AlbumCli::HardDelete { id } => AlbumHandler::hard_delete(id).await,
         },
+
+        Some(Commands::About) => show_about(),
 
         None => Cli::command().print_help().expect("failed to print help"),
     }

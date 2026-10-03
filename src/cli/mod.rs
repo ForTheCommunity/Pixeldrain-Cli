@@ -21,6 +21,8 @@ pub enum Commands {
         #[command(subcommand)]
         album_cli: AlbumCli,
     },
+    /// Show information about this project.
+    About,
 }
 
 #[derive(Args, Debug)]
@@ -45,9 +47,10 @@ pub struct UploadArgs {
     /// Delete local files after they are successfully uploaded.
     #[arg(short = 'd', long)]
     pub delete: bool,
-    // /// Path to a state file for tracking uploaded files and resuming uploads.
-    // #[arg(short = 's', long)]
-    // state: Option<PathBuf>,
+
+    /// Path to a state file for tracking uploaded files and resuming uploads.
+    #[arg(short = 's', long)]
+    state: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]

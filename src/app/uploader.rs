@@ -12,6 +12,7 @@ use crate::{
         collector::collect_files,
         format_bytes,
         progress::{ProgressReader, TransferProgress, TransferType},
+        state::upload::UploadState,
     },
 };
 use std::{path::PathBuf, sync::Arc};
@@ -23,6 +24,7 @@ pub struct UploadPipelineOptions {
     pub album_id: Option<String>,
     pub formats: Option<Vec<String>>,
     pub delete_after: bool,
+    pub state: Option<PathBuf>,
     pub max_concurrent_small_uploads: usize,
 }
 
@@ -39,6 +41,7 @@ impl Default for UploadPipelineOptions {
             album_id: None,
             formats: None,
             delete_after: false,
+            state: None,
             max_concurrent_small_uploads: 10,
         }
     }
@@ -221,6 +224,7 @@ impl UploadPipeline {
     ) -> Result<Vec<UploadResponse>> {
         let semaphore = Arc::new(Semaphore::new(self.options.max_concurrent_small_uploads));
         let mut join_set = JoinSet::new();
+        let delete_after = self.options.delete_after;
 
         for (path, size) in files {
             let permit = semaphore.clone().acquire_owned().await?;
@@ -249,6 +253,24 @@ impl UploadPipeline {
                     Ok(res) => {
                         let url = format!("https://pixeldrain.com/u/{}", res.id);
                         progress.file_finished_with_url(&file_pb, &file_name, true, Some(&url));
+                        // Delete local file if -d flag was specified
+                        if delete_after {
+                            match fs::remove_file(&path).await {
+                                Ok(_) => {
+                                    progress.overall_pb.println(format!(
+                                        "  🗑 Deleted local file: {}",
+                                        path.display()
+                                    ));
+                                }
+                                Err(e) => {
+                                    progress.overall_pb.println(format!(
+                                        "  ⚠ Failed to delete local file {}: {}",
+                                        path.display(),
+                                        e
+                                    ));
+                                }
+                            }
+                        }
                     }
                     Err(_) => {
                         progress.file_finished_with_url(&file_pb, &file_name, false, None);
@@ -330,6 +352,24 @@ impl UploadPipeline {
                                 progress.overall_pb.println(format!(
                                     "  ⚠ Failed to add file {} to album: {:#}",
                                     res.id, err
+                                ));
+                            }
+                        }
+                    }
+
+                    // Delete local file if -d flag was specified
+                    if self.options.delete_after {
+                        match fs::remove_file(&path).await {
+                            Ok(_) => {
+                                progress
+                                    .overall_pb
+                                    .println(format!("  🗑 Deleted local file: {}", path.display()));
+                            }
+                            Err(e) => {
+                                progress.overall_pb.println(format!(
+                                    "  ⚠ Failed to delete local file {}: {}",
+                                    path.display(),
+                                    e
                                 ));
                             }
                         }
