@@ -3,12 +3,28 @@ use anyhow::{Result, anyhow};
 use crate::core::{crypto, password::prompt_password, storage};
 
 pub fn login() -> Result<()> {
-    println!(
-        "Add your API KEY, API KEY will be saved in your local machine and will be encrypted
-     so that other programs can't read it and only you can unlock it. \n
-    this password will be needed to decrypt API Key while uploading files so use a rememberable password.
-     "
-    );
+//     println!(
+// 
+//         
+//         "Add your API KEY, API KEY will be saved in your local machine and will be encrypted \n  
+//         so that other programs can't read it and only you can unlock it. \n
+//         this password will be needed to decrypt API Key while uploading files 
+//         so use a rememberable password."
+//     );
+
+println!(
+    r#"
+    🛠 API KEY SETUP
+
+    Add your API KEY.
+
+    Your API KEY will be saved on your local machine and encrypted
+    so that other programs cannot read it and only you can unlock it.
+
+    This password will be needed to decrypt your API KEY while
+    uploading files, so please use a memorable password.
+"#
+);
 
     let api_key = prompt_password("Pixeldrain API key: ")?;
 

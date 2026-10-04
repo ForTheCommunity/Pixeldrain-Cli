@@ -32,11 +32,11 @@ pub struct UploadArgs {
     pub paths: Vec<PathBuf>,
 
     /// Move uploaded files to a new album \ list.
-    #[arg(short = 'a', long, num_args = 1..)]
-    pub album: Option<String>,
+    #[arg(short = 'a', long, num_args = 1..,value_name = "ALBUM NAME")]
+    pub album: Option<Vec<String>>,
 
     /// Add uploaded files to an already existing album/list by its ID.
-    #[arg(short = 'i', long, conflicts_with = "album")]
+    #[arg(short = 'i', long, conflicts_with = "album",value_name = "ALBUM ID")]
     album_id: Option<String>,
 
     /// File Format Filter, only files with specified filter will be upload.
@@ -73,7 +73,7 @@ pub enum AlbumCli {
         id: String,
     },
 
-    /// Hard Delete an album/list and all files inside it. ( alias : hd )
+    /// Delete an album/list and all files inside it. ( alias : hd )
     #[command(alias = "hd")]
     HardDelete {
         /// Album/list ID.

@@ -1,6 +1,6 @@
 use std::{fs, path::PathBuf};
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 use directories::ProjectDirs;
 
 use crate::core::{
@@ -34,18 +34,21 @@ pub fn save_credentials(credentials: &EncryptedData) -> Result<()> {
 pub fn load_credentials() -> Result<EncryptedData> {
     let path = credentials_path()?;
 
+    if !path.exists() {
+        bail!(
+            "You are not logged in.\n\
+                Run `pixeldrain-cli login` first."
+        );
+    }
     let json = fs::read_to_string(path)?;
-
     let credentials = serde_json::from_str(&json)?;
 
     Ok(credentials)
 }
 
 pub fn get_api_key() -> Result<String> {
-    let password = prompt_password("Decrypt API KEY (Enter Encryption password): ")?;
-
     let encrypted = load_credentials()?;
-
+    let password = prompt_password("Decrypt API KEY (Enter Encryption password): ")?;
     let api_key = crypto::decrypt(&encrypted, &password)?;
 
     Ok(api_key)
