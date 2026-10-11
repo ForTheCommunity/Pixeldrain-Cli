@@ -1,5 +1,8 @@
 # Changelog
 
+## [0.1.5] - 2026-10-11
+- Decoupled old messy monolithic code
+
 ## [0.1.4] - 2026-08-25
 - added feature to Move Uploaded files to already existing album/list.
 - added feature to resume upload using a state file to track upload.

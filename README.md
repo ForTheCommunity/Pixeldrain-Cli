@@ -100,7 +100,7 @@ Directories are searched recursively.
 ## ✦ Upload files and directories together
 
 ```bash
-pixeldrain-cli upload -p video.mp4  ~/Downloads/Videos/ -p ~/Downloads/Photos/
+pixeldrain-cli upload -p video.mp4  ~/Downloads/Videos/  ~/Downloads/Photos/
 ```
 
 ## ✦ Filter by file format
@@ -316,7 +316,9 @@ The CLI uses the platform's appropriate application-data directory rather than p
 If you find this project useful, consider supporting its development.
 <br>
 **Monero (XMR):**
-`83eg4LiD5PEWGu6JpU2mfQVmVdNJQfKzGAi5GUGZKBkBdWBaGxxUrifCj1WyiUEtUfLNaxQjcfHDaDtxfZhr7RboPCVvTYf`
+```
+83eg4LiD5PEWGu6JpU2mfQVmVdNJQfKzGAi5GUGZKBkBdWBaGxxUrifCj1WyiUEtUfLNaxQjcfHDaDtxfZhr7RboPCVvTYf
+```
 
 
 ## ❖ License

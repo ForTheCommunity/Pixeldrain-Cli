@@ -10,6 +10,9 @@ Description:
 Created By:
   ForTheCommunity
 
+Matrix Chat Room:
+  https://matrix.to/#/#pixeldrain_cli:matrix.org
+
 Website:
   https://shaswotdhungana.com.np
 
