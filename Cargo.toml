@@ -21,5 +21,6 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 tabled = "0.21.0"
 thiserror = "2.0.20"
+transformer = { path = "../transformer" }
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7.19", features = ["io"] }

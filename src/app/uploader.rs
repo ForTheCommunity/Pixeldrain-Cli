@@ -6,9 +6,7 @@ use tokio::{
 };
 
 use crate::{
-    api::{client::ApiClient, models::upload::UploadResponse},
-    app::album::AlbumAction,
-    core::{
+    api::{client::ApiClient, models::upload::UploadResponse}, app::{album::AlbumAction, encrypted_uploads::encrypted_upload}, core::{
         collector::collect_files,
         format_bytes,
         progress::{ProgressReader, TransferProgress, TransferType},
@@ -25,12 +23,16 @@ pub struct UploadPipelineOptions {
     pub formats: Option<Vec<String>>,
     pub delete_after: bool,
     pub state: Option<PathBuf>,
+    // Password used to encrypt file before uploading it...
+    pub enc_password: Option<Option<String>>,
+    pub enc_keystore: Option<PathBuf>,
+    pub chunk_size: u8,
     pub max_concurrent_small_uploads: usize,
 }
 
 pub struct UploadPipeline {
-    client: ApiClient,
-    options: UploadPipelineOptions,
+  pub  client: ApiClient,
+   pub  options: UploadPipelineOptions,
 }
 
 impl Default for UploadPipelineOptions {
@@ -42,6 +44,9 @@ impl Default for UploadPipelineOptions {
             formats: None,
             delete_after: false,
             state: None,
+            enc_password: None,
+            enc_keystore: None,
+            chunk_size: u8::default(),
             max_concurrent_small_uploads: 10,
         }
     }
@@ -53,6 +58,21 @@ impl UploadPipeline {
     }
 
     pub async fn run(self) -> Result<()> {
+
+        // if encryption is enabled.
+        // i don't have time & energy to integrate encrypted upload to existing code,,,,
+        // so i am handling encrypted uploads separately.
+        
+            if self.options.enc_password.is_some() || self.options.enc_keystore.is_some() {
+   encrypted_upload(self).await?;
+            Ok(())
+
+            
+        } 
+
+        // Normal Uploads.
+        else {
+            
         let mut album_name_cli = String::new();
         if let Some(al_name) = &self.options.album_name {
             album_name_cli = al_name.join(" ");
@@ -269,6 +289,7 @@ impl UploadPipeline {
         progress.all_finished();
 
         Ok(())
+        }
     }
 
     /// Saves upload state to disk if a state path is configured.

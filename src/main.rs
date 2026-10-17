@@ -7,6 +7,7 @@ use pixeldrain_cli::{
     },
     core::login::login,
 };
+use transformer::crypt::create_ks;
 
 #[tokio::main]
 async fn main() {
@@ -41,6 +42,12 @@ async fn main() {
             AlbumCli::Delete { id } => AlbumHandler::delete(id).await,
             AlbumCli::HardDelete { id } => AlbumHandler::hard_delete(id).await,
         },
+
+        Some(Commands::CreateKeystore { file_path }) => {
+            if let Err(e) = create_ks(&file_path) {
+                eprintln!("   Error -> {}", e.to_string())
+            }
+        }
 
         Some(Commands::About) => show_about(),
 

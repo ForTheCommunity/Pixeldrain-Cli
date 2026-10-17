@@ -21,6 +21,14 @@ pub enum Commands {
         #[command(subcommand)]
         album_cli: AlbumCli,
     },
+
+    /// Create Keystore
+    CreateKeystore {
+        /// Output path for keystore
+        #[arg(short = 'o', long)]
+        file_path: PathBuf,
+    },
+
     /// Show information about this project.
     About,
 }
@@ -36,7 +44,7 @@ pub struct UploadArgs {
     pub album: Option<Vec<String>>,
 
     /// Add uploaded files to an already existing album/list by its ID.
-    #[arg(short = 'i', long, conflicts_with = "album",value_name = "ALBUM ID")]
+    #[arg(short = 'i', long, conflicts_with = "album", value_name = "ALBUM ID")]
     album_id: Option<String>,
 
     /// File Format Filter, only files with specified filter will be upload.
@@ -51,6 +59,18 @@ pub struct UploadArgs {
     /// Path to a state file for tracking uploaded files and resuming uploads.
     #[arg(short = 's', long)]
     state: Option<PathBuf>,
+
+    /// Encrypt file(s) before upload directly using a password (self-contained)
+    #[arg(long, conflicts_with = "encrypt_keystore")]
+    pub encrypt_pass: Option<Option<String>>, // None if flag omitted, Some(None) if flag passed without value, Some(Some(pwd)) if value provided
+
+    /// Encrypt file(s) before upload using a keystore file
+    #[arg(long, conflicts_with = "encrypt_pass", value_name = "KEYSTORE_PATH")]
+    pub encrypt_keystore: Option<PathBuf>,
+
+    /// Chunk size used while encrypting file. (1-100 MB, default: 1 MB)
+    #[arg(short = 'c', long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=100))]
+    chunk_size: u8,
 }
 
 #[derive(Subcommand)]

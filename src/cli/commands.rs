@@ -18,6 +18,9 @@ pub async fn upload(args: UploadArgs) -> Result<()> {
         delete_after: args.delete,
         formats: args.formats,
         state: args.state,
+        enc_password: args.encrypt_pass,
+        enc_keystore: args.encrypt_keystore,
+        chunk_size: args.chunk_size,
         ..Default::default()
     };
 
