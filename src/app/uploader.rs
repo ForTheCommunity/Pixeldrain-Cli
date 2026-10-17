@@ -10,7 +10,7 @@ use crate::{
         collector::collect_files,
         format_bytes,
         progress::{ProgressReader, TransferProgress, TransferType},
-        state::upload::UploadState,
+        state::upload::state::UploadState,
     },
 };
 use std::{path::PathBuf, sync::Arc};

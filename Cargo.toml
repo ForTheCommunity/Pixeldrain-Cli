@@ -8,7 +8,7 @@ aes-gcm = "0.11.0"
 anyhow = "1.0.104"
 argon2 = "0.5.3"
 base64 = "0.23.1"
-# blake3 = "1.8.7"
+blake3 = "1.8.7"
 clap = { version = "4.4", features = ["derive"] }
 directories = "6.0.0"
 humansize = "2.1.3"

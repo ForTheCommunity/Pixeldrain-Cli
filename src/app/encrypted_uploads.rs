@@ -2,17 +2,20 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use indicatif::{ProgressBar, ProgressStyle};
 use tokio::fs::{self, File};
-use tokio::io::{AsyncRead, ReadBuf};
+use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
 use transformer::crypt::{encrypt_file_ks, encyrpt_file_wp};
 
 use crate::core::password::prompt_password;
 use crate::{
     api::endpoints::album::AlbumApi,
     app::uploader::UploadPipeline,
-    core::{collector::collect_files, state::upload::UploadState, storage::project_data_dir},
+    core::{
+        collector::collect_files, state::upload::enc_state::EncUploadState,
+        storage::project_data_dir,
+    },
 };
 
 /// A wrapper around any tokio AsyncRead that updates an indicatif ProgressBar as it's read.
@@ -45,7 +48,7 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
     let upload_options = upload_pipeline.options;
 
     let mut album_name_cli = String::new();
-    if let Some(al_name) = upload_options.album_name {
+    if let Some(ref al_name) = upload_options.album_name {
         album_name_cli = al_name.join(" ");
         println!("Album Name : {}", album_name_cli);
     };
@@ -76,7 +79,7 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
 
     // Load or create upload state
     let mut upload_state = match &upload_options.state {
-        Some(state_path) if state_path.exists() => match UploadState::load(state_path).await {
+        Some(state_path) if state_path.exists() => match EncUploadState::load(state_path).await {
             Ok(state) => {
                 println!("  ✦ Resuming from state file: {}", state_path.display());
                 state
@@ -87,10 +90,10 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
                     state_path.display(),
                     e
                 );
-                UploadState::default()
+                EncUploadState::default()
             }
         },
-        _ => UploadState::default(),
+        _ => EncUploadState::default(),
     };
 
     // Prepare temp directory once outside the loop
@@ -113,10 +116,17 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
             }
         };
 
+        // Prompt for master password only if it hasn't been provided yet
+        if ks_master_password.is_none() && upload_options.enc_keystore.is_some() {
+            let password = prompt_password(" Enter Your Master Password ->  ")?;
+            ks_master_password = Some(password);
+        }
+
         let file_size = metadata.len(); // Original file size for state tracking
+        let orignal_filename = file.file_name().unwrap().to_str().unwrap().to_owned();
 
         // skip files that were already uploaded with the same size.
-        if let Some(_existing_id) = upload_state.get_file_id(&file, file_size) {
+        if let Some(_existing_id) = upload_state.get_file_id(&orignal_filename, file_size) {
             println!(
                 "Skipped file {:?}, already uploaded....",
                 file.file_name().unwrap()
@@ -124,16 +134,38 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
             continue;
         }
 
-        let chunk_size = upload_options.chunk_size as usize;
+        // computing blake3 Hash of orignal file.
+        println!("  Computing hash for: {}", orignal_filename);
+        let hash_pb = ProgressBar::new(file_size);
+        hash_pb.set_style(ProgressStyle::default_bar()
+            .template("{spinner:.cyan} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} (Hashing)")
+            .unwrap()
+            .progress_chars("=>-"),
+        );
 
-        let encrypted_file: PathBuf = if let Some(keystore_path) = &upload_options.enc_keystore {
-            let out_path = temp_dir.join(file.file_name().unwrap());
+        // chunk size.
+        // using same chunk/buffer size for hashing and encryption.
+        let chunk_size = (upload_options.chunk_size as usize) * 1024 * 1024;
 
-            // Prompt for master password only if it hasn't been provided yet
-            if ks_master_password.is_none() {
-                let password = prompt_password(" Enter Your Master Password ->  ")?;
-                ks_master_password = Some(password);
+        let mut hasher = blake3::Hasher::new();
+        let mut source_file = File::open(&file).await?;
+        let mut buffer = vec![0u8; chunk_size];
+        let mut hash_reader = tokio::io::BufReader::new(&mut source_file);
+
+        loop {
+            let n = hash_reader.read(&mut buffer).await?;
+            if n == 0 {
+                break;
             }
+            hasher.update(&buffer[..n]);
+            hash_pb.inc(n as u64);
+        }
+        hash_pb.finish_with_message("Hashed successfully!");
+        let original_file_b3hash = hasher.finalize().to_hex().to_string();
+
+        // Encryption
+        let encrypted_file: PathBuf = if let Some(keystore_path) = &upload_options.enc_keystore {
+            let out_path = temp_dir.clone();
 
             encrypt_file_ks(
                 keystore_path,
@@ -141,8 +173,7 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
                 &out_path,
                 chunk_size,
                 ks_master_password.clone(),
-            )?;
-            out_path
+            )?
         } else if let Some(password) = &upload_options.enc_password {
             encyrpt_file_wp(&file, &temp_dir, password, chunk_size)?
         } else {
@@ -155,20 +186,20 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
 
         // Get the length of the *encrypted* file for streaming & progress bar total
         let encrypted_metadata = fs::metadata(&encrypted_file).await?;
-        let encrypted_length = encrypted_metadata.len();
+        let encrypted_file_length = encrypted_metadata.len();
 
-        let filename = encrypted_file
+        let encrypted_file_name = encrypted_file
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("encrypted_file");
 
         // Setup Progress Bar
-        let pb = ProgressBar::new(encrypted_length);
+        let pb = ProgressBar::new(encrypted_file_length);
         pb.set_style(
             ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
+                .template("{spinner:.green} {msg} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
                 .unwrap()
-                .progress_chars("#>-"),
+                .progress_chars("=>-"),
         );
 
         // Wrap reader with progress bar tracker
@@ -178,9 +209,14 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
         };
 
         // uploading....
+        println!(
+            "  Uploading: '{}' as '{}'",
+            orignal_filename, encrypted_file_name
+        );
         let api_client = upload_pipeline.client.clone();
+
         let upload_response = match api_client
-            .upload_file_stream(filename, progress_reader, encrypted_length)
+            .upload_file_stream(encrypted_file_name, progress_reader, encrypted_file_length)
             .await
         {
             Ok(resp) => {
@@ -201,59 +237,93 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
 
         let file_id = upload_response.id;
 
+        // blake3 hash of orignal file.
+        let enc_file_name = encrypted_file
+            .file_name()
+            .ok_or(anyhow!(
+                "Error occurred while getting filename of encrypted file."
+            ))?
+            .to_str()
+            .ok_or(anyhow!("Error converting OsString to String"))?
+            .to_owned();
+
         // Record uploaded file into state using the original `file_size`
-        upload_state.add_file(file, file_id.clone(), file_size);
+        upload_state.add_file(
+            orignal_filename,
+            file_id.clone(),
+            file_size,
+            original_file_b3hash,
+            enc_file_name,
+        );
         let state_path = upload_options.state.clone();
         save_state(&upload_state, &state_path).await;
 
-        // Safe API key handling
-        let api_key = api_client
-            .api_key
-            .as_deref()
-            .expect("API key is required for album creation and management");
+        // album works
+        if upload_options.album_id.is_some() || upload_options.album_name.is_some() {
+            let api_key = api_client
+                .api_key
+                .as_deref()
+                .expect("API key is required for album creation and management");
 
-        let album_api = AlbumApi {
-            api_key,
-            id: upload_state.album_id.as_deref(),
-        };
+            let album_api = AlbumApi {
+                api_key,
+                id: upload_state.album_id.as_deref(),
+            };
 
-        match upload_state.album_id.clone() {
-            Some(album_id_str) => {
-                // updating album..
-                let album_api = AlbumApi {
-                    api_key,
-                    id: Some(&album_id_str),
-                };
+            match upload_state.album_id.clone() {
+                Some(album_id_str) => {
+                    // updating album..
+                    let album_api = AlbumApi {
+                        api_key,
+                        id: Some(&album_id_str),
+                    };
 
-                AlbumApi::add_file(album_api, &[file_id]).await?;
-            }
-            None => {
-                // creating new album & updating album id in state file.
-                match AlbumApi::create_album(&album_api, &album_name_cli, &[file_id]).await {
-                    Ok(new_album_id) => {
-                        // saving album id to state
-                        upload_state.set_album_id(new_album_id);
-                    }
-                    Err(e) => {
-                        println!(" Error -> {}", e.to_string())
+                    AlbumApi::add_file(album_api, &[file_id]).await?;
+                }
+                None => {
+                    // creating new album & updating album id in state file.
+                    match AlbumApi::create_album(&album_api, &album_name_cli, &[file_id]).await {
+                        Ok(new_album_id) => {
+                            // saving album id to state
+                            upload_state.set_album_id(new_album_id);
+                        }
+                        Err(e) => {
+                            println!(" Error -> {}", e.to_string())
+                        }
                     }
                 }
             }
         }
 
-        // Print the current album ID and URL once it's created or updated
-        if let Some(ref album_id) = upload_state.album_id {
-            println!(
-                " Album ID: {} | URL -> https://pixeldrain.com/a/{}",
-                album_id, album_id
-            );
+        // deleting orignal file if delete flag is passed.
+        if upload_options.delete_after {
+            match fs::remove_file(&file).await {
+                Ok(_) => {
+                    println!("  🗑 Deleted orignal file: {}", file.display());
+                }
+                Err(e) => {
+                    println!(
+                        "  ⚠ Failed to delete orignal file {}: {}",
+                        file.display(),
+                        e
+                    );
+                }
+            }
         }
+    }
+
+    // Print the current album ID and URL once it's created or updated
+    if let Some(ref album_id) = upload_state.album_id {
+        println!(
+            " Album ID: {} | URL -> https://pixeldrain.com/l/{}",
+            album_id, album_id
+        );
     }
 
     Ok(())
 }
 
-async fn save_state(upload_state: &UploadState, state_path: &Option<PathBuf>) {
+async fn save_state(upload_state: &EncUploadState, state_path: &Option<PathBuf>) {
     if let Some(path) = state_path {
         if let Err(e) = upload_state.save(path).await {
             eprintln!("  ⚠ Failed to save state: {:#}", e);
