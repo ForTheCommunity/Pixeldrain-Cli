@@ -6,6 +6,8 @@ use std::{
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
+use crate::core::hash::compute_b3hash;
+
 /// Version of the on-disk upload state format.
 const STATE_VERSION: u32 = 1;
 
@@ -94,15 +96,30 @@ impl EncUploadState {
         PathBuf::from(tmp)
     }
 
-    /// Returns the saved Pixeldrain file ID if this local file
-    /// is already recorded with the same file size.
-    ///
-    /// A changed file is treated as a new file.
-    pub fn get_file_id(&self, file_name: &String, current_size: u64) -> Option<&str> {
-        self.files
-            .get(file_name)
-            .filter(|saved| saved.size == current_size)
-            .map(|saved| saved.id.as_str())
+    pub async fn file_lookup(
+        &self,
+        file_name: &String,
+        file_size: u64,
+        file_path: &PathBuf,
+        chunk_size: usize,
+    ) -> Result<bool> {
+        // First check with filename & file size, then with file hash.
+        if let Some(file) = self.files.get(file_name) {
+            // File exists in state with the same file name...
+            // Now checking if both have the same file size.
+            if file.size == file_size {
+                // If file size is the same, compute hash and compare against state.
+                let file_hash = compute_b3hash(chunk_size, file_size, file_path).await?;
+
+                if file_hash == file.blake3_hash {
+                    // Hash matched -> 100% same file (Cache Hit / Exact Match)
+                    return Ok(true);
+                }
+            }
+        }
+
+        // No exact match found
+        Ok(false)
     }
 
     /// Records a successfully uploaded file.

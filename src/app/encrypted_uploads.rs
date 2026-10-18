@@ -5,9 +5,10 @@ use std::task::{Context, Poll};
 use anyhow::{Result, anyhow};
 use indicatif::{ProgressBar, ProgressStyle};
 use tokio::fs::{self, File};
-use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
+use tokio::io::{AsyncRead, ReadBuf};
 use transformer::crypt::{encrypt_file_ks, encyrpt_file_wp};
 
+use crate::core::hash::compute_b3hash;
 use crate::core::password::prompt_password;
 use crate::{
     api::endpoints::album::AlbumApi,
@@ -125,8 +126,17 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
         let file_size = metadata.len(); // Original file size for state tracking
         let orignal_filename = file.file_name().unwrap().to_str().unwrap().to_owned();
 
-        // skip files that were already uploaded with the same size.
-        if let Some(_existing_id) = upload_state.get_file_id(&orignal_filename, file_size) {
+        // chunk size.
+        // using same chunk/buffer size for hashing and encryption.
+        let chunk_size = (upload_options.chunk_size as usize) * 1024 * 1024;
+
+        // State check
+        // skip files that were already uploaded with the same size & hash.
+
+        if upload_state
+            .file_lookup(&orignal_filename, file_size, &file, chunk_size)
+            .await?
+        {
             println!(
                 "Skipped file {:?}, already uploaded....",
                 file.file_name().unwrap()
@@ -135,33 +145,7 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
         }
 
         // computing blake3 Hash of orignal file.
-        println!("  Computing hash for: {}", orignal_filename);
-        let hash_pb = ProgressBar::new(file_size);
-        hash_pb.set_style(ProgressStyle::default_bar()
-            .template("{spinner:.cyan} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} (Hashing)")
-            .unwrap()
-            .progress_chars("=>-"),
-        );
-
-        // chunk size.
-        // using same chunk/buffer size for hashing and encryption.
-        let chunk_size = (upload_options.chunk_size as usize) * 1024 * 1024;
-
-        let mut hasher = blake3::Hasher::new();
-        let mut source_file = File::open(&file).await?;
-        let mut buffer = vec![0u8; chunk_size];
-        let mut hash_reader = tokio::io::BufReader::new(&mut source_file);
-
-        loop {
-            let n = hash_reader.read(&mut buffer).await?;
-            if n == 0 {
-                break;
-            }
-            hasher.update(&buffer[..n]);
-            hash_pb.inc(n as u64);
-        }
-        hash_pb.finish_with_message("Hashed successfully!");
-        let original_file_b3hash = hasher.finalize().to_hex().to_string();
+        let original_file_b3hash = compute_b3hash(chunk_size, file_size, &file).await?;
 
         // Encryption
         let encrypted_file: PathBuf = if let Some(keystore_path) = &upload_options.enc_keystore {
