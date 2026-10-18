@@ -2,8 +2,9 @@ use clap::{CommandFactory, Parser};
 use pixeldrain_cli::{
     app::about::show_about,
     cli::{
-        AlbumCli, Cli, Commands,
-        commands::{AlbumHandler, upload},
+        AlbumCli, Cli,
+        Commands::{self},
+        commands::{AlbumHandler, download, upload},
     },
     core::login::login,
 };
@@ -35,6 +36,11 @@ async fn main() {
                 Err(e) => println!("Error -> {}", e),
             }
         }
+
+        Some(Commands::Download(args)) => match download(args).await {
+            Ok(_) => {}
+            Err(e) => println!("Error -> {}", e),
+        },
 
         Some(Commands::Album { album_cli }) => match album_cli {
             AlbumCli::List => AlbumHandler::list_all().await,

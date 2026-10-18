@@ -5,7 +5,8 @@ pub enum ApiError {
     #[error("Network Connection Error : {0}")]
     Network(#[from] reqwest::Error),
 
-    #[error("API request failed with Status Code : ")]
+    // Fix: Added fields to the error message display string
+    #[error("API request failed with Status Code {status}: {message}")]
     HttpStatusError {
         status: reqwest::StatusCode,
         message: String,

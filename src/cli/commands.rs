@@ -4,9 +4,10 @@ use crate::{
     api::client::ApiClient,
     app::{
         album::AlbumAction,
+        downloader::Downloader,
         uploader::{UploadPipeline, UploadPipelineOptions},
     },
-    cli::UploadArgs,
+    cli::{DownloadArgs, UploadArgs},
     core::storage::get_api_key,
 };
 
@@ -28,6 +29,19 @@ pub async fn upload(args: UploadArgs) -> Result<()> {
 
     let upload_pipeline = UploadPipeline::new(ApiClient::default().with_api_key(api_key), up_opts);
     upload_pipeline.run().await?;
+    Ok(())
+}
+
+pub async  fn download(args: DownloadArgs) -> Result<()> {
+    let api_key = get_api_key()?;
+    let downloader = Downloader {
+        urls: args.links,
+        output_path: args.path,
+        keystore_path: args.decrypt_keystore,
+        password: args.decrypt_pass
+    };
+    Downloader::start(downloader, ApiClient::default().with_api_key(api_key)).await?;
+
     Ok(())
 }
 
