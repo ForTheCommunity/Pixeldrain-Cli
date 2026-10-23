@@ -243,7 +243,10 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
         save_state(&upload_state, &state_path).await;
 
         // album works
-        if upload_options.album_id.is_some() || upload_options.album_name.is_some() {
+        if upload_options.album_id.is_some()
+            || upload_options.album_name.is_some()
+            || upload_state.album_id.is_some()
+        {
             let api_key = api_client
                 .api_key
                 .as_deref()

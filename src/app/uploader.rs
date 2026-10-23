@@ -6,7 +6,9 @@ use tokio::{
 };
 
 use crate::{
-    api::{client::ApiClient, models::upload::UploadResponse}, app::{album::AlbumAction, encrypted_uploads::encrypted_upload}, core::{
+    api::{client::ApiClient, models::upload::UploadResponse},
+    app::{album::AlbumAction, encrypted_uploads::encrypted_upload},
+    core::{
         collector::collect_files,
         format_bytes,
         progress::{ProgressReader, TransferProgress, TransferType},
@@ -31,8 +33,8 @@ pub struct UploadPipelineOptions {
 }
 
 pub struct UploadPipeline {
-  pub  client: ApiClient,
-   pub  options: UploadPipelineOptions,
+    pub client: ApiClient,
+    pub options: UploadPipelineOptions,
 }
 
 impl Default for UploadPipelineOptions {
@@ -58,21 +60,12 @@ impl UploadPipeline {
     }
 
     pub async fn run(self) -> Result<()> {
-
         // if encryption is enabled.
-        // i don't have time & energy to integrate encrypted upload to existing code,,,,
-        // so i am handling encrypted uploads separately.
-        
-            if self.options.enc_password.is_some() || self.options.enc_keystore.is_some() {
-   encrypted_upload(self).await?;
-            Ok(())
+        if self.options.enc_password.is_some() || self.options.enc_keystore.is_some() {
+            encrypted_upload(self).await?;
+            return Ok(());
+        }
 
-            
-        } 
-
-        // Normal Uploads.
-        else {
-            
         let mut album_name_cli = String::new();
         if let Some(al_name) = &self.options.album_name {
             album_name_cli = al_name.join(" ");
@@ -289,7 +282,6 @@ impl UploadPipeline {
         progress.all_finished();
 
         Ok(())
-        }
     }
 
     /// Saves upload state to disk if a state path is configured.
