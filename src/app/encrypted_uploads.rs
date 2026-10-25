@@ -6,7 +6,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use tokio::fs::{self, File};
 use transformer::crypt::{encrypt_file_ks, encyrpt_file_wp};
 
-use crate::core::hash::compute_b3hash;
+use crate::core::hash::{compute_b3hash, compute_b3hash_with_pb};
 use crate::core::password::prompt_password;
 use crate::{
     api::endpoints::album::AlbumApi,
@@ -123,8 +123,13 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
         format_bytes(total_transfer_size)
     );
 
-    let progress =
-        TransferProgress::new(TransferType::Upload, total_files, total_transfer_size);
+    let is_multi = total_files > 1;
+
+    let progress = if is_multi {
+        Some(TransferProgress::new(TransferType::Upload, total_files, total_transfer_size))
+    } else {
+        None
+    };
 
     // Prepare temp directory once outside the loop
     let temp_dir = project_data_dir()?.join("temp_files");
@@ -156,12 +161,19 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
         }
 
         // computing blake3 Hash of orignal file.
-        let original_file_b3hash = compute_b3hash(chunk_size, file_size, &file).await?;
+        let original_file_b3hash = if let Some(p) = &progress {
+            compute_b3hash_with_pb(chunk_size, file_size, &file, Some((&p.multi_pb, &p.overall_pb))).await?
+        } else {
+            compute_b3hash(chunk_size, file_size, &file).await?
+        };
 
         // Setup Progress Bar for Encryption
-        let enc_pb = progress
-            .multi_pb
-            .insert_before(&progress.overall_pb, ProgressBar::new(file_size));
+        let enc_pb = if let Some(p) = &progress {
+            p.multi_pb
+                .insert_before(&p.overall_pb, ProgressBar::new(file_size))
+        } else {
+            ProgressBar::new(file_size)
+        };
         enc_pb.set_style(
             ProgressStyle::default_bar()
                 .template("  {spinner:.cyan} Encrypting [{bar:40.cyan/dim}] {bytes}/{total_bytes} (ETA: {eta})")
@@ -216,12 +228,16 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
         let encrypted_file: PathBuf = match enc_res {
             Ok(path) => {
                 enc_pb.finish_and_clear();
-                progress.multi_pb.remove(&enc_pb);
+                if let Some(p) = &progress {
+                    p.multi_pb.remove(&enc_pb);
+                }
                 path
             }
             Err(e) => {
                 enc_pb.abandon_with_message("Encryption failed");
-                progress.multi_pb.remove(&enc_pb);
+                if let Some(p) = &progress {
+                    p.multi_pb.remove(&enc_pb);
+                }
                 return Err(e);
             }
         };
@@ -237,14 +253,24 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
             .and_then(|n| n.to_str())
             .unwrap_or("encrypted_file");
 
-        let file_pb = progress.file_started(&orignal_filename, encrypted_file_length);
+        let single_progress;
+        let active_progress = match &progress {
+            Some(p) => p,
+            None => {
+                single_progress =
+                    TransferProgress::new(TransferType::Upload, 1, encrypted_file_length);
+                &single_progress
+            }
+        };
+
+        let file_pb = active_progress.file_started(&orignal_filename, encrypted_file_length);
 
         // Wrap reader with progress bar tracker
         let progress_reader = ProgressReader::new(
             file_reader,
             file_pb.clone(),
-            progress.overall_pb.clone(),
-            !progress.is_single_file(),
+            active_progress.overall_pb.clone(),
+            !active_progress.is_single_file(),
         );
 
         let api_client = upload_pipeline.client.clone();
@@ -256,11 +282,14 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
             Ok(resp) => {
                 let _ = fs::remove_file(&encrypted_file).await;
                 let url = format!("https://pixeldrain.com/u/{}", resp.id);
-                progress.file_finished_with_url(&file_pb, &orignal_filename, true, Some(&url));
+                active_progress.file_finished_with_url(&file_pb, &orignal_filename, true, Some(&url));
+                if !is_multi {
+                    active_progress.all_finished();
+                }
                 resp
             }
             Err(e) => {
-                progress.file_finished_with_url(&file_pb, &orignal_filename, false, None);
+                active_progress.file_finished_with_url(&file_pb, &orignal_filename, false, None);
                 return Err(e.into());
             }
         };
@@ -321,7 +350,11 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
                             upload_state.set_album_id(new_album_id);
                         }
                         Err(e) => {
-                            progress.overall_pb.println(format!(" Error -> {}", e.to_string()));
+                            if let Some(p) = &progress {
+                                p.overall_pb.println(format!(" Error -> {}", e.to_string()));
+                            } else {
+                                println!(" Error -> {}", e.to_string());
+                            }
                         }
                     }
                 }
@@ -332,14 +365,26 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
         if upload_options.delete_after {
             match fs::remove_file(&file).await {
                 Ok(_) => {
-                    progress.overall_pb.println(format!("  🗑 Deleted orignal file: {}", file.display()));
+                    if let Some(p) = &progress {
+                        p.overall_pb.println(format!("  🗑 Deleted orignal file: {}", file.display()));
+                    } else {
+                        println!("  🗑 Deleted orignal file: {}", file.display());
+                    }
                 }
                 Err(e) => {
-                    progress.overall_pb.println(format!(
-                        "  ⚠ Failed to delete orignal file {}: {}",
-                        file.display(),
-                        e
-                    ));
+                    if let Some(p) = &progress {
+                        p.overall_pb.println(format!(
+                            "  ⚠ Failed to delete orignal file {}: {}",
+                            file.display(),
+                            e
+                        ));
+                    } else {
+                        println!(
+                            "  ⚠ Failed to delete orignal file {}: {}",
+                            file.display(),
+                            e
+                        );
+                    }
                 }
             }
         }
@@ -348,12 +393,17 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
     // Print the current album ID and URL once it's created or updated
     if let Some(ref album_id) = upload_state.album_id {
         let album_url = format!("https://pixeldrain.com/l/{}", album_id);
-        progress
-            .overall_pb
-            .println(format!("\n  ✦ Album URL: {}", album_url));
+        if let Some(p) = &progress {
+            p.overall_pb
+                .println(format!("\n  ✦ Album URL: {}", album_url));
+        } else {
+            println!("\n  ✦ Album URL: {}", album_url);
+        }
     }
 
-    progress.all_finished();
+    if let Some(p) = &progress {
+        p.all_finished();
+    }
 
     Ok(())
 }

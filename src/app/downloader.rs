@@ -171,8 +171,13 @@ impl Downloader {
             format_bytes(total_transfer_size)
         );
 
-        let transfer_progress =
-            TransferProgress::new(TransferType::Download, total_files, total_transfer_size);
+        let is_multi = total_files > 1;
+
+        let transfer_progress = if is_multi {
+            Some(TransferProgress::new(TransferType::Download, total_files, total_transfer_size))
+        } else {
+            None
+        };
 
         for item in items {
             let filename = item.name;
@@ -198,14 +203,24 @@ impl Downloader {
             let (total_length, reader) = api_client.download_file_stream(&file_id).await?;
             let file_length = if total_length > 0 { total_length } else { item.size };
 
-            let file_pb = transfer_progress.file_started(&filename, file_length);
+            let single_progress;
+            let active_progress = match &transfer_progress {
+                Some(p) => p,
+                None => {
+                    single_progress =
+                        TransferProgress::new(TransferType::Download, 1, file_length);
+                    &single_progress
+                }
+            };
+
+            let file_pb = active_progress.file_started(&filename, file_length);
 
             // Wrap reader using the ProgressReader::new constructor
             let mut progress_reader = ProgressReader::new(
                 reader,
                 file_pb.clone(),
-                transfer_progress.overall_pb.clone(),
-                !transfer_progress.is_single_file(),
+                active_progress.overall_pb.clone(),
+                !active_progress.is_single_file(),
             );
 
             // Create the temporary destination file
@@ -221,7 +236,7 @@ impl Downloader {
                 Ok(_) => {
                     // Rename temp file to final filename once 100% complete
                     tokio::fs::rename(&temp_file_path, &dest_file_path).await?;
-                    transfer_progress.file_finished(&file_pb, &filename, true);
+                    active_progress.file_finished(&file_pb, &filename, true);
 
                     // decrypting file (if password or keystore was provided)
                     if self.password.is_some() || self.keystore_path.is_some() {
@@ -231,9 +246,12 @@ impl Downloader {
                             Err(_) => file_length,
                         };
 
-                        let dec_pb = transfer_progress
-                            .multi_pb
-                            .insert_before(&transfer_progress.overall_pb, ProgressBar::new(file_size));
+                        let dec_pb = if let Some(p) = &transfer_progress {
+                            p.multi_pb
+                                .insert_before(&p.overall_pb, ProgressBar::new(file_size))
+                        } else {
+                            ProgressBar::new(file_size)
+                        };
                         dec_pb.set_style(
                             ProgressStyle::default_bar()
                                 .template("  {spinner:.cyan} Decrypting [{bar:40.cyan/dim}] {bytes}/{total_bytes} (ETA: {eta})")
@@ -274,34 +292,49 @@ impl Downloader {
                         match dec_res {
                             Ok(restored_path) => {
                                 dec_pb.finish_and_clear();
-                                transfer_progress.multi_pb.remove(&dec_pb);
+                                if let Some(p) = &transfer_progress {
+                                    p.multi_pb.remove(&dec_pb);
+                                }
                                 let restored_name = restored_path
                                     .file_name()
                                     .and_then(|n| n.to_str())
                                     .unwrap_or(&filename);
-                                transfer_progress.overall_pb.println(format!(
+                                let dec_msg = format!(
                                     "  ✓ Successfully decrypted! Restored original file: '{}'",
                                     restored_name
-                                ));
+                                );
+                                if let Some(p) = &transfer_progress {
+                                    p.overall_pb.println(dec_msg);
+                                } else {
+                                    println!("{}", dec_msg);
+                                }
                             }
                             Err(e) => {
                                 dec_pb.abandon_with_message("Decryption failed");
-                                transfer_progress.multi_pb.remove(&dec_pb);
+                                if let Some(p) = &transfer_progress {
+                                    p.multi_pb.remove(&dec_pb);
+                                }
                                 return Err(e);
                             }
                         }
+                    }
+
+                    if !is_multi {
+                        active_progress.all_finished();
                     }
                 }
                 Err(e) => {
                     // Clean up partial temporary file on failure
                     let _ = tokio::fs::remove_file(&temp_file_path).await;
-                    transfer_progress.file_finished(&file_pb, &filename, false);
+                    active_progress.file_finished(&file_pb, &filename, false);
                     return Err(e.into());
                 }
             }
         }
 
-        transfer_progress.all_finished();
+        if let Some(p) = &transfer_progress {
+            p.all_finished();
+        }
 
         Ok(())
     }

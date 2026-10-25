@@ -88,9 +88,8 @@ impl TransferProgress {
                 .progress_chars("=>-"),
             );
             overall_pb.set_message(format!("0/{} files", total_files));
+            overall_pb.enable_steady_tick(Duration::from_millis(100));
         }
-
-        overall_pb.enable_steady_tick(Duration::from_millis(100));
 
         Self {
             transfer_type,
@@ -112,6 +111,7 @@ impl TransferProgress {
 
         if self.is_single_file() {
             self.overall_pb.set_message(safe_name);
+            self.overall_pb.enable_steady_tick(Duration::from_millis(100));
             self.overall_pb.clone()
         } else {
             let bar_colors = self.transfer_type.per_file_bar_colors();
