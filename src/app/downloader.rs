@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -6,12 +6,53 @@ use tokio::fs::File;
 use transformer::crypt::{check_master_password, decyrpt_file_ks, decyrpt_file_wp};
 
 use crate::{
-    api::client::ApiClient,
+    api::{client::ApiClient, endpoints::album::AlbumApi},
     core::{
         password::prompt_password,
         progress::{ProgressReader, TransferProgress, TransferType},
     },
 };
+
+#[derive(Debug, PartialEq, Eq)]
+enum UrlTarget {
+    File(String),
+    Album(String),
+}
+
+fn parse_url_target(url: &str) -> Result<UrlTarget> {
+    let clean = url.trim();
+
+    if clean.contains("/l/") || clean.contains("/list/") {
+        let raw_id = if clean.contains("/l/") {
+            clean.split("/l/").last()
+        } else {
+            clean.split("/list/").last()
+        };
+
+        let id = raw_id
+            .and_then(|s| s.split(['?', '#', '/']).find(|p| !p.is_empty()))
+            .ok_or_else(|| anyhow!("Invalid pixeldrain album URL: {}", url))?;
+
+        Ok(UrlTarget::Album(id.to_string()))
+    } else if clean.contains("/u/") {
+        let raw_id = clean.split("/u/").last();
+
+        let id = raw_id
+            .and_then(|s| s.split(['?', '#', '/']).find(|p| !p.is_empty()))
+            .ok_or_else(|| anyhow!("Invalid pixeldrain URL: {}", url))?;
+
+        Ok(UrlTarget::File(id.to_string()))
+    } else if !clean.contains('/') && !clean.is_empty() {
+        // Fallback for raw file ID
+        let id = clean.split(['?', '#']).next().unwrap_or(clean);
+        if id.is_empty() {
+            return Err(anyhow!("Invalid pixeldrain URL: {}", url));
+        }
+        Ok(UrlTarget::File(id.to_string()))
+    } else {
+        Err(anyhow!("Invalid pixeldrain URL: {}", url))
+    }
+}
 
 pub struct Downloader {
     pub urls: Vec<String>,
@@ -54,15 +95,57 @@ impl Downloader {
             }
         }
 
-        for url in self.urls {
-            // Extract file ID from URL (e.g., https://pixeldrain.com/u/abc123xyz -> abc123xyz)
-            let file_id = match url.split("/u/").last() {
-                Some(id) if !id.is_empty() => id,
-                _ => return Err(anyhow!("Invalid pixeldrain URL: {}", url)),
-            };
+        let api_key = api_client
+            .api_key
+            .as_deref()
+            .map(|s| s.as_str())
+            .unwrap_or("");
 
+        let mut file_ids = Vec::new();
+
+        for url in self.urls {
+            match parse_url_target(&url)? {
+                UrlTarget::File(file_id) => {
+                    file_ids.push(file_id);
+                }
+                UrlTarget::Album(album_id) => {
+                    let album_api = AlbumApi {
+                        api_key,
+                        id: Some(&album_id),
+                    };
+
+                    let album_details = album_api
+                        .get_files()
+                        .await
+                        .with_context(|| format!("Failed to fetch files for album '{}'", album_id))?;
+
+                    println!(
+                        "  ✦ Album: '{}' ({} files)",
+                        album_details.title,
+                        album_details.files.len()
+                    );
+
+                    for file in album_details.files {
+                        file_ids.push(file.id);
+                    }
+                }
+            }
+        }
+
+        if file_ids.is_empty() {
+            println!("  No files found to download.");
+            return Ok(());
+        }
+
+        if file_ids.len() > 1 && !self.output_path.is_dir() {
+            return Err(anyhow!(
+                "Output path must be a directory when downloading multiple files."
+            ));
+        }
+
+        for file_id in file_ids {
             // Fetch file info to get the original filename
-            let file_info = api_client.get_file_info(file_id).await?;
+            let file_info = api_client.get_file_info(&file_id).await?;
             let filename = file_info.name;
 
             // Determine final and temporary file paths
@@ -82,7 +165,7 @@ impl Downloader {
             };
 
             // Call the download function stream
-            let (total_length, reader) = api_client.download_file_stream(file_id).await?;
+            let (total_length, reader) = api_client.download_file_stream(&file_id).await?;
 
             // Setup TransferProgress manager for the download using the real filename
             let transfer_progress = TransferProgress::new(TransferType::Download, 1, total_length);
@@ -189,5 +272,74 @@ impl Downloader {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_file_url() {
+        assert_eq!(
+            parse_url_target("https://pixeldrain.com/u/abc123xyz").unwrap(),
+            UrlTarget::File("abc123xyz".to_string())
+        );
+        assert_eq!(
+            parse_url_target("https://pixeldrain.com/u/abc123xyz/").unwrap(),
+            UrlTarget::File("abc123xyz".to_string())
+        );
+        assert_eq!(
+            parse_url_target("https://pixeldrain.com/u/abc123xyz?embed").unwrap(),
+            UrlTarget::File("abc123xyz".to_string())
+        );
+        assert_eq!(
+            parse_url_target("pixeldrain.com/u/abc123xyz").unwrap(),
+            UrlTarget::File("abc123xyz".to_string())
+        );
+        assert_eq!(
+            parse_url_target("/u/abc123xyz").unwrap(),
+            UrlTarget::File("abc123xyz".to_string())
+        );
+        assert_eq!(
+            parse_url_target("abc123xyz").unwrap(),
+            UrlTarget::File("abc123xyz".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_album_url() {
+        assert_eq!(
+            parse_url_target("https://pixeldrain.com/l/alb123xyz").unwrap(),
+            UrlTarget::Album("alb123xyz".to_string())
+        );
+        assert_eq!(
+            parse_url_target("https://pixeldrain.com/l/alb123xyz/").unwrap(),
+            UrlTarget::Album("alb123xyz".to_string())
+        );
+        assert_eq!(
+            parse_url_target("https://pixeldrain.com/list/alb123xyz").unwrap(),
+            UrlTarget::Album("alb123xyz".to_string())
+        );
+        assert_eq!(
+            parse_url_target("pixeldrain.com/l/alb123xyz").unwrap(),
+            UrlTarget::Album("alb123xyz".to_string())
+        );
+        assert_eq!(
+            parse_url_target("/l/alb123xyz").unwrap(),
+            UrlTarget::Album("alb123xyz".to_string())
+        );
+        assert_eq!(
+            parse_url_target("https://pixeldrain.com/l/alb123xyz?foo=bar").unwrap(),
+            UrlTarget::Album("alb123xyz".to_string())
+        );
+    }
+
+    #[test]
+    fn test_invalid_url() {
+        assert!(parse_url_target("https://example.com/other").is_err());
+        assert!(parse_url_target("https://pixeldrain.com/l/").is_err());
+        assert!(parse_url_target("https://pixeldrain.com/u/").is_err());
+        assert!(parse_url_target("").is_err());
     }
 }
