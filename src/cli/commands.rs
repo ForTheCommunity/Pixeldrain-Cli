@@ -1,14 +1,12 @@
 use anyhow::Result;
+use transformer::crypt::keystore::create_keystore;
 
 use crate::{
-    api::client::ApiClient,
-    app::{
+    api::client::ApiClient, app::{
         album::AlbumAction,
         downloader::Downloader,
         uploader::{UploadPipeline, UploadPipelineOptions},
-    },
-    cli::{DownloadArgs, UploadArgs},
-    core::storage::get_api_key,
+    }, cli::{DownloadArgs, UploadArgs}, core::{password::prompt_password, storage::get_api_key},
 };
 
 pub async fn upload(args: UploadArgs) -> Result<()> {
@@ -75,4 +73,25 @@ impl AlbumHandler {
             Err(e) => println!("  Error : {}", e),
         }
     }
+}
+
+
+
+pub fn create_ks(path: &std::path::Path) -> anyhow::Result<()> {
+    let keystore_path = if path.is_dir() {
+        path.join("keystore.json")
+    } else {
+        path.to_path_buf()
+    };
+
+    let password = prompt_password("    Enter New Master password: ")?;
+    let confirm_password = prompt_password("    Confirm Password: ")?;
+
+    if password != confirm_password {
+        return Err(anyhow::anyhow!(" Password didn't match !!!"));
+    }
+
+    create_keystore(&keystore_path, &password).map_err(|e| anyhow::anyhow!("{}", e))?;
+    println!(" Generated Keystore at {}", keystore_path.display());
+    Ok(())
 }

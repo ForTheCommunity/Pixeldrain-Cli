@@ -1929,7 +1929,7 @@ dependencies = [
 [[package]]
 name = "transformer"
 version = "0.1.0"
-source = "git+https://gitlab.com/ForTheCommunity/Transformer.git?rev=960d1a677fab4d7987573317375444615c841275#960d1a677fab4d7987573317375444615c841275"
+source = "git+https://gitlab.com/ForTheCommunity/Transformer.git?rev=3f197fd2651edb20bace04d88eb02e02d7a5fd98#3f197fd2651edb20bace04d88eb02e02d7a5fd98"
 dependencies = [
  "aes-gcm",
  "anyhow",

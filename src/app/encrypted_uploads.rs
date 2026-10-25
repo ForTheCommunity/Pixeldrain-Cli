@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -106,6 +107,11 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
 
     // Master password cache for keystore (asked only once)
     let mut ks_master_password: Option<String> = None;
+    // Password cache for password-based encryption (asked only once)
+    let mut enc_password: Option<String> = match &upload_options.enc_password {
+        Some(Some(pwd)) => Some(pwd.clone()),
+        _ => None,
+    };
 
     // upload loop
     for file in all_files {
@@ -121,6 +127,12 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
         if ks_master_password.is_none() && upload_options.enc_keystore.is_some() {
             let password = prompt_password(" Enter Your Master Password ->  ")?;
             ks_master_password = Some(password);
+        }
+
+        // Prompt for encryption password only if it hasn't been provided yet
+        if enc_password.is_none() && upload_options.enc_password.is_some() {
+            let password = prompt_password(" Enter Encryption Password ->  ")?;
+            enc_password = Some(password);
         }
 
         let file_size = metadata.len(); // Original file size for state tracking
@@ -147,23 +159,68 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
         // computing blake3 Hash of orignal file.
         let original_file_b3hash = compute_b3hash(chunk_size, file_size, &file).await?;
 
+        // Setup Progress Bar for Encryption
+        let enc_pb = ProgressBar::new(file_size);
+        enc_pb.set_style(
+            ProgressStyle::default_bar()
+                .template("  {spinner:.cyan} Encrypting [{bar:40.cyan/dim}] {bytes}/{total_bytes} (ETA: {eta})")
+                .unwrap()
+                .progress_chars("━╸─"),
+        );
+        enc_pb.enable_steady_tick(Duration::from_millis(100));
+
         // Encryption
-        let encrypted_file: PathBuf = if let Some(keystore_path) = &upload_options.enc_keystore {
+        let enc_res = if let Some(keystore_path) = &upload_options.enc_keystore {
             let out_path = temp_dir.clone();
+            let pwd = ks_master_password
+                .as_ref()
+                .ok_or_else(|| anyhow!("Master password not provided"))?
+                .clone();
+            let enc_pb_clone = enc_pb.clone();
 
             encrypt_file_ks(
                 keystore_path,
                 &file,
                 &out_path,
                 chunk_size,
-                ks_master_password.clone(),
-            )?
-        } else if let Some(password) = &upload_options.enc_password {
-            encyrpt_file_wp(&file, &temp_dir, password, chunk_size)?
+                pwd,
+                false,
+                move |bytes_read| {
+                    enc_pb_clone.inc(bytes_read);
+                },
+            )
+        } else if upload_options.enc_password.is_some() {
+            let pwd = enc_password
+                .as_ref()
+                .ok_or_else(|| anyhow!("Encryption password not provided"))?
+                .clone();
+            let enc_pb_clone = enc_pb.clone();
+
+            encyrpt_file_wp(
+                &file,
+                &temp_dir,
+                pwd,
+                chunk_size,
+                false,
+                move |bytes_read| {
+                    enc_pb_clone.inc(bytes_read);
+                },
+            )
         } else {
-            return Err(anyhow::anyhow!(
+            return Err(anyhow!(
                 "Error: Neither an encryption password nor a keystore was provided."
             ));
+        };
+
+        let encrypted_file: PathBuf = match enc_res {
+            Ok(path) => {
+                enc_pb.finish_and_clear();
+                path
+            }
+            Err(e) => {
+                enc_pb.abandon_with_message("Encryption failed");
+                return Err(e);
+            }
         };
 
         let file_reader = File::open(&encrypted_file).await?;

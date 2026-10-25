@@ -1,13 +1,16 @@
 use anyhow::{Result, anyhow};
+use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
+use std::time::Duration;
 use tokio::fs::File;
-use transformer::crypt::{
-    check_master_password, decyrpt_file_ks, decyrpt_file_wp, prompt_password,
-};
+use transformer::crypt::{check_master_password, decyrpt_file_ks, decyrpt_file_wp};
 
 use crate::{
     api::client::ApiClient,
-    core::progress::{ProgressReader, TransferProgress, TransferType},
+    core::{
+        password::prompt_password,
+        progress::{ProgressReader, TransferProgress, TransferType},
+    },
 };
 
 pub struct Downloader {
@@ -113,19 +116,67 @@ impl Downloader {
 
                     // decrypting file (if password or keystore was provided)
                     if self.password.is_some() || self.keystore_path.is_some() {
-                        let file_path = self.output_path.join(&filename);
-                        if let Some(keystore_path) = &self.keystore_path {
+                        let file_path = &dest_file_path;
+                        let file_size = match tokio::fs::metadata(file_path).await {
+                            Ok(meta) => meta.len(),
+                            Err(_) => total_length,
+                        };
+
+                        let dec_pb = ProgressBar::new(file_size);
+                        dec_pb.set_style(
+                            ProgressStyle::default_bar()
+                                .template("  {spinner:.cyan} Decrypting [{bar:40.cyan/dim}] {bytes}/{total_bytes} (ETA: {eta})")
+                                .unwrap()
+                                .progress_chars("━╸─"),
+                        );
+                        dec_pb.enable_steady_tick(Duration::from_millis(100));
+
+                        let dec_pb_clone = dec_pb.clone();
+                        let pwd = password
+                            .as_ref()
+                            .ok_or_else(|| anyhow!("Password not provided for decryption"))?
+                            .clone();
+
+                        let dec_res = if let Some(keystore_path) = &self.keystore_path {
                             decyrpt_file_ks(
                                 keystore_path,
-                                &file_path,
+                                file_path,
                                 &self.output_path,
-                                &password,
-                            )?;
-                            println!("Decrypted File: {}", &filename);
-                        } else if let Some(password) = &self.password {
-                            decyrpt_file_wp(&file_path, &self.output_path, password)?;
-                            println!("Decrypted File: {}", &filename);
+                                pwd,
+                                true,
+                                move |bytes_read| {
+                                    dec_pb_clone.inc(bytes_read);
+                                },
+                            )
+                        } else {
+                            decyrpt_file_wp(
+                                file_path,
+                                &self.output_path,
+                                pwd,
+                                true,
+                                move |bytes_read| {
+                                    dec_pb_clone.inc(bytes_read);
+                                },
+                            )
                         };
+
+                        match dec_res {
+                            Ok(restored_path) => {
+                                dec_pb.finish_and_clear();
+                                let restored_name = restored_path
+                                    .file_name()
+                                    .and_then(|n| n.to_str())
+                                    .unwrap_or(&filename);
+                                println!(
+                                    "  ✓ Successfully decrypted! Restored original file: '{}'",
+                                    restored_name
+                                );
+                            }
+                            Err(e) => {
+                                dec_pb.abandon_with_message("Decryption failed");
+                                return Err(e);
+                            }
+                        }
                     }
                 }
                 Err(e) => {
