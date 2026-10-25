@@ -8,10 +8,17 @@ use transformer::crypt::{check_master_password, decyrpt_file_ks, decyrpt_file_wp
 use crate::{
     api::{client::ApiClient, endpoints::album::AlbumApi},
     core::{
+        format_bytes,
         password::prompt_password,
         progress::{ProgressReader, TransferProgress, TransferType},
     },
 };
+
+struct DownloadItem {
+    id: String,
+    name: String,
+    size: u64,
+}
 
 #[derive(Debug, PartialEq, Eq)]
 enum UrlTarget {
@@ -101,12 +108,20 @@ impl Downloader {
             .map(|s| s.as_str())
             .unwrap_or("");
 
-        let mut file_ids = Vec::new();
+        let mut items = Vec::new();
 
         for url in self.urls {
             match parse_url_target(&url)? {
                 UrlTarget::File(file_id) => {
-                    file_ids.push(file_id);
+                    let file_info = api_client
+                        .get_file_info(&file_id)
+                        .await
+                        .with_context(|| format!("Failed to fetch file info for '{}'", file_id))?;
+                    items.push(DownloadItem {
+                        id: file_id,
+                        name: file_info.name,
+                        size: file_info.size,
+                    });
                 }
                 UrlTarget::Album(album_id) => {
                     let album_api = AlbumApi {
@@ -126,27 +141,42 @@ impl Downloader {
                     );
 
                     for file in album_details.files {
-                        file_ids.push(file.id);
+                        items.push(DownloadItem {
+                            id: file.id,
+                            name: file.name,
+                            size: file.size,
+                        });
                     }
                 }
             }
         }
 
-        if file_ids.is_empty() {
+        if items.is_empty() {
             println!("  No files found to download.");
             return Ok(());
         }
 
-        if file_ids.len() > 1 && !self.output_path.is_dir() {
+        if items.len() > 1 && !self.output_path.is_dir() {
             return Err(anyhow!(
                 "Output path must be a directory when downloading multiple files."
             ));
         }
 
-        for file_id in file_ids {
-            // Fetch file info to get the original filename
-            let file_info = api_client.get_file_info(&file_id).await?;
-            let filename = file_info.name;
+        let total_files = items.len();
+        let total_transfer_size: u64 = items.iter().map(|item| item.size).sum();
+
+        println!(
+            "   ✦ Files to download : {} \n   ✦ Download size     : {}",
+            total_files,
+            format_bytes(total_transfer_size)
+        );
+
+        let transfer_progress =
+            TransferProgress::new(TransferType::Download, total_files, total_transfer_size);
+
+        for item in items {
+            let filename = item.name;
+            let file_id = item.id;
 
             // Determine final and temporary file paths
             let (dest_file_path, temp_file_path) = if self.output_path.is_dir() {
@@ -166,10 +196,9 @@ impl Downloader {
 
             // Call the download function stream
             let (total_length, reader) = api_client.download_file_stream(&file_id).await?;
+            let file_length = if total_length > 0 { total_length } else { item.size };
 
-            // Setup TransferProgress manager for the download using the real filename
-            let transfer_progress = TransferProgress::new(TransferType::Download, 1, total_length);
-            let file_pb = transfer_progress.file_started(&filename, total_length);
+            let file_pb = transfer_progress.file_started(&filename, file_length);
 
             // Wrap reader using the ProgressReader::new constructor
             let mut progress_reader = ProgressReader::new(
@@ -194,18 +223,17 @@ impl Downloader {
                     tokio::fs::rename(&temp_file_path, &dest_file_path).await?;
                     transfer_progress.file_finished(&file_pb, &filename, true);
 
-                    // ending progress bar so that 'decyrpt_file_ks' can prompt for master password
-                    transfer_progress.all_finished();
-
                     // decrypting file (if password or keystore was provided)
                     if self.password.is_some() || self.keystore_path.is_some() {
                         let file_path = &dest_file_path;
                         let file_size = match tokio::fs::metadata(file_path).await {
                             Ok(meta) => meta.len(),
-                            Err(_) => total_length,
+                            Err(_) => file_length,
                         };
 
-                        let dec_pb = ProgressBar::new(file_size);
+                        let dec_pb = transfer_progress
+                            .multi_pb
+                            .insert_before(&transfer_progress.overall_pb, ProgressBar::new(file_size));
                         dec_pb.set_style(
                             ProgressStyle::default_bar()
                                 .template("  {spinner:.cyan} Decrypting [{bar:40.cyan/dim}] {bytes}/{total_bytes} (ETA: {eta})")
@@ -246,17 +274,19 @@ impl Downloader {
                         match dec_res {
                             Ok(restored_path) => {
                                 dec_pb.finish_and_clear();
+                                transfer_progress.multi_pb.remove(&dec_pb);
                                 let restored_name = restored_path
                                     .file_name()
                                     .and_then(|n| n.to_str())
                                     .unwrap_or(&filename);
-                                println!(
+                                transfer_progress.overall_pb.println(format!(
                                     "  ✓ Successfully decrypted! Restored original file: '{}'",
                                     restored_name
-                                );
+                                ));
                             }
                             Err(e) => {
                                 dec_pb.abandon_with_message("Decryption failed");
+                                transfer_progress.multi_pb.remove(&dec_pb);
                                 return Err(e);
                             }
                         }
@@ -270,6 +300,8 @@ impl Downloader {
                 }
             }
         }
+
+        transfer_progress.all_finished();
 
         Ok(())
     }

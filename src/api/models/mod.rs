@@ -6,4 +6,6 @@ pub mod upload;
 #[derive(Deserialize)]
 pub struct FileInfo {
     pub name: String,
+    #[serde(default)]
+    pub size: u64,
 }

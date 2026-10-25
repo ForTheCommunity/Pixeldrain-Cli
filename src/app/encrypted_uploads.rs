@@ -1,12 +1,9 @@
 use std::path::PathBuf;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 use indicatif::{ProgressBar, ProgressStyle};
 use tokio::fs::{self, File};
-use tokio::io::{AsyncRead, ReadBuf};
 use transformer::crypt::{encrypt_file_ks, encyrpt_file_wp};
 
 use crate::core::hash::compute_b3hash;
@@ -15,36 +12,11 @@ use crate::{
     api::endpoints::album::AlbumApi,
     app::uploader::UploadPipeline,
     core::{
-        collector::collect_files, state::upload::enc_state::EncUploadState,
-        storage::project_data_dir,
+        collector::collect_files, format_bytes,
+        progress::{ProgressReader, TransferProgress, TransferType},
+        state::upload::enc_state::EncUploadState, storage::project_data_dir,
     },
 };
-
-/// A wrapper around any tokio AsyncRead that updates an indicatif ProgressBar as it's read.
-struct ProgressReader<R> {
-    inner: R,
-    pb: ProgressBar,
-}
-
-impl<R: AsyncRead + Unpin> AsyncRead for ProgressReader<R> {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<std::io::Result<()>> {
-        let prev_filled = buf.filled().len();
-        match Pin::new(&mut self.inner).poll_read(cx, buf) {
-            Poll::Ready(Ok(())) => {
-                let bytes_read = (buf.filled().len() - prev_filled) as u64;
-                if bytes_read > 0 {
-                    self.pb.inc(bytes_read);
-                }
-                Poll::Ready(Ok(()))
-            }
-            other => other,
-        }
-    }
-}
 
 pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
     let upload_options = upload_pipeline.options;
@@ -98,6 +70,62 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
         _ => EncUploadState::default(),
     };
 
+    let chunk_size = (upload_options.chunk_size as usize) * 1024 * 1024;
+    let mut files_to_upload = Vec::new();
+    let mut skipped_files = Vec::new();
+
+    for file in all_files {
+        let metadata = match fs::metadata(&file).await {
+            Ok(metadata) => metadata,
+            Err(e) => {
+                eprintln!("  ⚠ Failed to read metadata for {}: {}", file.display(), e);
+                continue;
+            }
+        };
+
+        let file_size = metadata.len();
+        let original_filename = file.file_name().unwrap().to_str().unwrap().to_owned();
+
+        if upload_state
+            .file_lookup(&original_filename, file_size, &file, chunk_size)
+            .await?
+        {
+            skipped_files.push(original_filename);
+            continue;
+        }
+
+        files_to_upload.push((file, original_filename, file_size));
+    }
+
+    if !skipped_files.is_empty() {
+        println!(
+            "  ✦ Skipped {} already-uploaded file(s) (from state)",
+            skipped_files.len()
+        );
+    }
+
+    let total_files = files_to_upload.len();
+    let total_transfer_size: u64 = files_to_upload.iter().map(|(_, _, size)| *size).sum();
+
+    if total_files == 0 {
+        if let Some(ref album_id) = upload_state.album_id {
+            println!(
+                " Album ID: {} | URL -> https://pixeldrain.com/l/{}",
+                album_id, album_id
+            );
+        }
+        return Ok(());
+    }
+
+    println!(
+        "   ✦ Files to upload : {} \n   ✦ Upload size     : {}",
+        total_files,
+        format_bytes(total_transfer_size)
+    );
+
+    let progress =
+        TransferProgress::new(TransferType::Upload, total_files, total_transfer_size);
+
     // Prepare temp directory once outside the loop
     let temp_dir = project_data_dir()?.join("temp_files");
     if temp_dir.exists() {
@@ -114,15 +142,7 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
     };
 
     // upload loop
-    for file in all_files {
-        let metadata = match fs::metadata(&file).await {
-            Ok(metadata) => metadata,
-            Err(e) => {
-                eprintln!("  ⚠ Failed to read metadata for {}: {}", file.display(), e);
-                continue;
-            }
-        };
-
+    for (file, orignal_filename, file_size) in files_to_upload {
         // Prompt for master password only if it hasn't been provided yet
         if ks_master_password.is_none() && upload_options.enc_keystore.is_some() {
             let password = prompt_password(" Enter Your Master Password ->  ")?;
@@ -135,32 +155,13 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
             enc_password = Some(password);
         }
 
-        let file_size = metadata.len(); // Original file size for state tracking
-        let orignal_filename = file.file_name().unwrap().to_str().unwrap().to_owned();
-
-        // chunk size.
-        // using same chunk/buffer size for hashing and encryption.
-        let chunk_size = (upload_options.chunk_size as usize) * 1024 * 1024;
-
-        // State check
-        // skip files that were already uploaded with the same size & hash.
-
-        if upload_state
-            .file_lookup(&orignal_filename, file_size, &file, chunk_size)
-            .await?
-        {
-            println!(
-                "Skipped file {:?}, already uploaded....",
-                file.file_name().unwrap()
-            );
-            continue;
-        }
-
         // computing blake3 Hash of orignal file.
         let original_file_b3hash = compute_b3hash(chunk_size, file_size, &file).await?;
 
         // Setup Progress Bar for Encryption
-        let enc_pb = ProgressBar::new(file_size);
+        let enc_pb = progress
+            .multi_pb
+            .insert_before(&progress.overall_pb, ProgressBar::new(file_size));
         enc_pb.set_style(
             ProgressStyle::default_bar()
                 .template("  {spinner:.cyan} Encrypting [{bar:40.cyan/dim}] {bytes}/{total_bytes} (ETA: {eta})")
@@ -215,10 +216,12 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
         let encrypted_file: PathBuf = match enc_res {
             Ok(path) => {
                 enc_pb.finish_and_clear();
+                progress.multi_pb.remove(&enc_pb);
                 path
             }
             Err(e) => {
                 enc_pb.abandon_with_message("Encryption failed");
+                progress.multi_pb.remove(&enc_pb);
                 return Err(e);
             }
         };
@@ -234,26 +237,16 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
             .and_then(|n| n.to_str())
             .unwrap_or("encrypted_file");
 
-        // Setup Progress Bar
-        let pb = ProgressBar::new(encrypted_file_length);
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{spinner:.green} {msg} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
-                .unwrap()
-                .progress_chars("=>-"),
-        );
+        let file_pb = progress.file_started(&orignal_filename, encrypted_file_length);
 
         // Wrap reader with progress bar tracker
-        let progress_reader = ProgressReader {
-            inner: file_reader,
-            pb: pb.clone(),
-        };
-
-        // uploading....
-        println!(
-            "  Uploading: '{}' as '{}'",
-            orignal_filename, encrypted_file_name
+        let progress_reader = ProgressReader::new(
+            file_reader,
+            file_pb.clone(),
+            progress.overall_pb.clone(),
+            !progress.is_single_file(),
         );
+
         let api_client = upload_pipeline.client.clone();
 
         let upload_response = match api_client
@@ -261,20 +254,16 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
             .await
         {
             Ok(resp) => {
-                pb.finish_with_message("Uploaded successfully!");
                 let _ = fs::remove_file(&encrypted_file).await;
+                let url = format!("https://pixeldrain.com/u/{}", resp.id);
+                progress.file_finished_with_url(&file_pb, &orignal_filename, true, Some(&url));
                 resp
             }
             Err(e) => {
-                pb.abandon_with_message("Upload failed");
+                progress.file_finished_with_url(&file_pb, &orignal_filename, false, None);
                 return Err(e.into());
             }
         };
-
-        println!(
-            " File uploaded, URL -> https://pixeldrain.com/u/{}",
-            upload_response.id
-        );
 
         let file_id = upload_response.id;
 
@@ -332,7 +321,7 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
                             upload_state.set_album_id(new_album_id);
                         }
                         Err(e) => {
-                            println!(" Error -> {}", e.to_string())
+                            progress.overall_pb.println(format!(" Error -> {}", e.to_string()));
                         }
                     }
                 }
@@ -343,14 +332,14 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
         if upload_options.delete_after {
             match fs::remove_file(&file).await {
                 Ok(_) => {
-                    println!("  🗑 Deleted orignal file: {}", file.display());
+                    progress.overall_pb.println(format!("  🗑 Deleted orignal file: {}", file.display()));
                 }
                 Err(e) => {
-                    println!(
+                    progress.overall_pb.println(format!(
                         "  ⚠ Failed to delete orignal file {}: {}",
                         file.display(),
                         e
-                    );
+                    ));
                 }
             }
         }
@@ -358,11 +347,13 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
 
     // Print the current album ID and URL once it's created or updated
     if let Some(ref album_id) = upload_state.album_id {
-        println!(
-            " Album ID: {} | URL -> https://pixeldrain.com/l/{}",
-            album_id, album_id
-        );
+        let album_url = format!("https://pixeldrain.com/l/{}", album_id);
+        progress
+            .overall_pb
+            .println(format!("\n  ✦ Album URL: {}", album_url));
     }
+
+    progress.all_finished();
 
     Ok(())
 }
