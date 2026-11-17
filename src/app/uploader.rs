@@ -10,7 +10,7 @@ use crate::{
     app::{album::AlbumAction, encrypted_uploads::encrypted_upload},
     core::{
         collector::collect_files,
-        format_bytes,
+        exceeds_max_upload_size, format_bytes,
         hash::compute_b3hash_with_pb,
         progress::{ProgressReader, TransferProgress, TransferType},
         state::upload::state::UploadState,
@@ -143,6 +143,15 @@ impl UploadPipeline {
             };
 
             let file_size = metadata.len();
+            if exceeds_max_upload_size(file_size) {
+                eprintln!(
+                    "  ⚠ Skipping {} ({}): exceeds 10 GiB limit",
+                    a_file.display(),
+                    format_bytes(file_size)
+                );
+                continue;
+            }
+
             let file_name = Self::file_name_for(&a_file);
 
             // Skip files that were already uploaded with the same name, size, and BLAKE3 hash.

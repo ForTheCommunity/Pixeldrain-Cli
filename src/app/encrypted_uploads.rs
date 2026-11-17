@@ -12,7 +12,7 @@ use crate::{
     api::endpoints::album::AlbumApi,
     app::uploader::UploadPipeline,
     core::{
-        collector::collect_files, format_bytes,
+        collector::collect_files, exceeds_max_upload_size, format_bytes,
         progress::{ProgressReader, TransferProgress, TransferType},
         state::upload::enc_state::EncUploadState, storage::project_data_dir,
     },
@@ -84,6 +84,15 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
         };
 
         let file_size = metadata.len();
+        if exceeds_max_upload_size(file_size) {
+            eprintln!(
+                "  ⚠ Skipping {} ({}): exceeds 10 GiB limit",
+                file.display(),
+                format_bytes(file_size)
+            );
+            continue;
+        }
+
         let original_filename = file.file_name().unwrap().to_str().unwrap().to_owned();
 
         if upload_state
@@ -251,6 +260,21 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
         // Get the length of the *encrypted* file for streaming & progress bar total
         let encrypted_metadata = fs::metadata(&encrypted_file).await?;
         let encrypted_file_length = encrypted_metadata.len();
+
+        if exceeds_max_upload_size(encrypted_file_length) {
+            let _ = fs::remove_file(&encrypted_file).await;
+            let msg = format!(
+                "  ⚠ Skipping {} ({} after encryption): exceeds 10 GiB limit",
+                orignal_filename,
+                format_bytes(encrypted_file_length)
+            );
+            if let Some(p) = &progress {
+                p.overall_pb.println(msg);
+            } else {
+                eprintln!("{}", msg);
+            }
+            continue;
+        }
 
         let encrypted_file_name = encrypted_file
             .file_name()

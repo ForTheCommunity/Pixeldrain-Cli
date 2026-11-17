@@ -1929,12 +1929,13 @@ dependencies = [
 [[package]]
 name = "transformer"
 version = "0.1.0"
-source = "git+https://gitlab.com/ForTheCommunity/Transformer.git?rev=3f197fd2651edb20bace04d88eb02e02d7a5fd98#3f197fd2651edb20bace04d88eb02e02d7a5fd98"
+source = "git+https://gitlab.com/ForTheCommunity/Transformer.git?rev=70f5032648962ab05277d910ae25bb33c4c60bdd#70f5032648962ab05277d910ae25bb33c4c60bdd"
 dependencies = [
  "aes-gcm",
  "anyhow",
  "argon2",
  "base64 0.23.1",
+ "blake3",
  "clap",
  "indicatif",
  "rand",
