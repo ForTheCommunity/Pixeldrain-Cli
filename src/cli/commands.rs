@@ -45,6 +45,8 @@ pub async fn download(args: DownloadArgs, auth: &AuthOptions) -> Result<()> {
         keystore_path: args.decrypt_keystore,
         keystore_pass: args.keystore_pass,
         password: args.decrypt_pass,
+        state: args.state,
+        chunk_size: args.chunk_size,
     };
     Downloader::start(downloader, ApiClient::default().with_api_key(api_key)).await?;
 

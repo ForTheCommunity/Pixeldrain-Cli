@@ -201,6 +201,8 @@ pixeldrain-cli download [OPTIONS] --path <PATH>
 | `-d` | `--decrypt-pass [<PASSWORD>]` | Decrypt downloaded files with password (prompts if value omitted, or uses `PIXELDRAIN_DECRYPT_PASS`) |
 | `-k` | `--decrypt-keystore <KEYSTORE_PATH>` | Decrypt downloaded files with a keystore file |
 | | `--keystore-pass <PASSWORD>` | Master password for `--decrypt-keystore` (or uses `PIXELDRAIN_KEYSTORE_PASS`) |
+| `-s` | `--state <STATE>` | Path to a state file for tracking downloaded files and resuming downloads |
+| `-c` | `--chunk-size <CHUNK_SIZE>` | Chunk/buffer size used while hashing files for state verification (1–100 MB, default: `1`) |
 
 Examples:
 

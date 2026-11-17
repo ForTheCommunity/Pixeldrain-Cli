@@ -101,6 +101,14 @@ pub struct DownloadArgs {
         value_name = "PASSWORD"
     )]
     pub keystore_pass: Option<String>,
+
+    /// Path to a state file for tracking downloaded files and resuming downloads.
+    #[arg(short = 's', long)]
+    pub state: Option<PathBuf>,
+
+    /// Chunk/Buffer size used while hashing files for state verification. (1-100 MB, default: 1 MB)
+    #[arg(short = 'c', long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=100))]
+    pub chunk_size: u8,
 }
 
 #[derive(Args, Debug)]
@@ -304,6 +312,10 @@ mod tests {
             "ks.json",
             "--keystore-pass",
             "master",
+            "-s",
+            "dl_state.json",
+            "-c",
+            "4",
             "--api-key",
             "key123",
         ])
@@ -313,6 +325,8 @@ mod tests {
             Some(Commands::Download(args)) => {
                 assert_eq!(args.decrypt_keystore, Some(PathBuf::from("ks.json")));
                 assert_eq!(args.keystore_pass.as_deref(), Some("master"));
+                assert_eq!(args.state, Some(PathBuf::from("dl_state.json")));
+                assert_eq!(args.chunk_size, 4);
             }
             _ => panic!("expected Download command"),
         }

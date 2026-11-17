@@ -2,15 +2,17 @@ use anyhow::{Context, Result, anyhow};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 use std::time::Duration;
-use tokio::fs::File;
+use tokio::{fs::File, io::AsyncWriteExt};
 use transformer::crypt::{check_master_password, decrypt_file_ks, decrypt_file_wp};
 
 use crate::{
     api::{client::ApiClient, endpoints::album::AlbumApi},
     core::{
         format_bytes,
+        hash::{Blake3Writer, compute_b3hash, compute_b3hash_with_pb},
         password::resolve_secret,
         progress::{ProgressReader, TransferProgress, TransferType},
+        state::download::DownloadState,
     },
 };
 
@@ -67,6 +69,8 @@ pub struct Downloader {
     pub keystore_path: Option<PathBuf>,
     pub keystore_pass: Option<String>,
     pub password: Option<Option<String>>,
+    pub state: Option<PathBuf>,
+    pub chunk_size: u8,
 }
 
 impl Downloader {
@@ -166,8 +170,58 @@ impl Downloader {
             ));
         }
 
-        let total_files = items.len();
-        let total_transfer_size: u64 = items.iter().map(|item| item.size).sum();
+        // Load or create download state
+        let mut download_state = match &self.state {
+            Some(state_path) if state_path.exists() => {
+                match DownloadState::load(state_path).await {
+                    Ok(state) => {
+                        println!("  ✦ Resuming from state file: {}", state_path.display());
+                        state
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "  ⚠ Failed to load state file ({}): {:#}. Starting fresh.",
+                            state_path.display(),
+                            e
+                        );
+                        DownloadState::default()
+                    }
+                }
+            }
+            _ => DownloadState::default(),
+        };
+
+        let chunk_size = (self.chunk_size.max(1) as usize) * 1024 * 1024;
+        let is_decrypting = self.password.is_some() || self.keystore_path.is_some();
+
+        let mut items_to_download = Vec::with_capacity(items.len());
+        let mut skipped_count = 0usize;
+
+        for item in items {
+            if self.state.is_some()
+                && download_state
+                    .file_lookup(&item.id, &self.output_path, is_decrypting, chunk_size)
+                    .await?
+            {
+                skipped_count += 1;
+                continue;
+            }
+            items_to_download.push(item);
+        }
+
+        if skipped_count > 0 {
+            println!(
+                "  ✦ Skipped {} already-downloaded file(s) (from state)",
+                skipped_count
+            );
+        }
+
+        if items_to_download.is_empty() {
+            return Ok(());
+        }
+
+        let total_files = items_to_download.len();
+        let total_transfer_size: u64 = items_to_download.iter().map(|item| item.size).sum();
 
         println!(
             "   ✦ Files to download : {} \n   ✦ Download size     : {}",
@@ -187,7 +241,7 @@ impl Downloader {
             None
         };
 
-        for item in items {
+        for item in items_to_download {
             let filename = item.name;
             let file_id = item.id;
 
@@ -234,23 +288,29 @@ impl Downloader {
                 !active_progress.is_single_file(),
             );
 
-            // Create the temporary destination file
-            let mut dest_file = File::create(&temp_file_path).await?;
+            // Create the temporary destination file wrapped with streaming BLAKE3 (for unencrypted state)
+            let dest_file = File::create(&temp_file_path).await?;
+            let compute_b3_on_fly = self.state.is_some() && !is_decrypting;
+            let mut blake3_writer = Blake3Writer::new(dest_file, compute_b3_on_fly);
 
             // Stream data from the API response into the temporary file
-            let copy_result = tokio::io::copy(&mut progress_reader, &mut dest_file).await;
+            let copy_result = tokio::io::copy(&mut progress_reader, &mut blake3_writer).await;
 
-            // Explicitly drop the file handle so it's closed before rename/delete operations
-            drop(dest_file);
+            // Explicitly drop the reader so the HTTP stream is closed
+            drop(progress_reader);
 
             match copy_result {
                 Ok(_) => {
+                    blake3_writer.flush().await?;
+                    let (dest_file, streamed_b3hash) = blake3_writer.finalize();
+                    drop(dest_file);
+
                     // Rename temp file to final filename once 100% complete
                     tokio::fs::rename(&temp_file_path, &dest_file_path).await?;
                     active_progress.file_finished(&file_pb, &filename, true);
 
                     // decrypting file (if password or keystore was provided)
-                    if self.password.is_some() || self.keystore_path.is_some() {
+                    let (final_local_path, final_file_size) = if is_decrypting {
                         let file_path = &dest_file_path;
                         let file_size = match tokio::fs::metadata(file_path).await {
                             Ok(meta) => meta.len(),
@@ -320,6 +380,11 @@ impl Downloader {
                                 } else {
                                     println!("{}", dec_msg);
                                 }
+                                let restored_size = tokio::fs::metadata(&restored_path)
+                                    .await
+                                    .map(|m| m.len())
+                                    .unwrap_or(0);
+                                (restored_path, restored_size)
                             }
                             Err(e) => {
                                 dec_pb.abandon_with_message("Decryption failed");
@@ -329,10 +394,53 @@ impl Downloader {
                                 return Err(e);
                             }
                         }
-                    }
+                    } else {
+                        let downloaded_size = tokio::fs::metadata(&dest_file_path)
+                            .await
+                            .map(|m| m.len())
+                            .unwrap_or(file_length);
+                        (dest_file_path.clone(), downloaded_size)
+                    };
 
                     if !is_multi {
                         active_progress.all_finished();
+                    }
+
+                    if let Some(state_path) = &self.state {
+                        let file_b3hash = match streamed_b3hash {
+                            Some(b3) => b3,
+                            None => {
+                                if let Some(p) = &transfer_progress {
+                                    compute_b3hash_with_pb(
+                                        chunk_size,
+                                        final_file_size,
+                                        &final_local_path,
+                                        Some((&p.multi_pb, &p.overall_pb)),
+                                    )
+                                    .await?
+                                } else {
+                                    compute_b3hash(chunk_size, final_file_size, &final_local_path)
+                                        .await?
+                                }
+                            }
+                        };
+
+                        let local_file_name = final_local_path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| filename.clone());
+
+                        download_state.add_file(
+                            file_id,
+                            local_file_name,
+                            final_file_size,
+                            file_b3hash,
+                            is_decrypting,
+                        );
+
+                        if let Err(e) = download_state.save(state_path).await {
+                            eprintln!("  ⚠ Failed to save state: {:#}", e);
+                        }
                     }
                 }
                 Err(e) => {
