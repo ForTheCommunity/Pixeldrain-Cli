@@ -4,10 +4,10 @@ use std::time::Duration;
 use anyhow::{Result, anyhow};
 use indicatif::{ProgressBar, ProgressStyle};
 use tokio::fs::{self, File};
-use transformer::crypt::{encrypt_file_ks, encyrpt_file_wp};
+use transformer::crypt::{encrypt_file_ks, encrypt_file_wp};
 
 use crate::core::hash::{compute_b3hash, compute_b3hash_with_pb};
-use crate::core::password::prompt_password;
+use crate::core::password::{env_non_empty, prompt_password};
 use crate::{
     api::endpoints::album::AlbumApi,
     app::uploader::UploadPipeline,
@@ -139,11 +139,15 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
     fs::create_dir_all(&temp_dir).await?;
 
     // Master password cache for keystore (asked only once)
-    let mut ks_master_password: Option<String> = None;
+    let mut ks_master_password: Option<String> = upload_options
+        .enc_keystore_pass
+        .clone()
+        .or_else(|| env_non_empty("PIXELDRAIN_KEYSTORE_PASS"));
     // Password cache for password-based encryption (asked only once)
     let mut enc_password: Option<String> = match &upload_options.enc_password {
         Some(Some(pwd)) => Some(pwd.clone()),
-        _ => None,
+        Some(None) => env_non_empty("PIXELDRAIN_ENCRYPT_PASS"),
+        None => None,
     };
 
     // upload loop
@@ -209,7 +213,7 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
                 .clone();
             let enc_pb_clone = enc_pb.clone();
 
-            encyrpt_file_wp(
+            encrypt_file_wp(
                 &file,
                 &temp_dir,
                 pwd,

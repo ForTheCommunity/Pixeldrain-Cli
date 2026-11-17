@@ -3,13 +3,13 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::fs::File;
-use transformer::crypt::{check_master_password, decyrpt_file_ks, decyrpt_file_wp};
+use transformer::crypt::{check_master_password, decrypt_file_ks, decrypt_file_wp};
 
 use crate::{
     api::{client::ApiClient, endpoints::album::AlbumApi},
     core::{
         format_bytes,
-        password::prompt_password,
+        password::resolve_secret,
         progress::{ProgressReader, TransferProgress, TransferType},
     },
 };
@@ -65,6 +65,7 @@ pub struct Downloader {
     pub urls: Vec<String>,
     pub output_path: PathBuf,
     pub keystore_path: Option<PathBuf>,
+    pub keystore_pass: Option<String>,
     pub password: Option<Option<String>>,
 }
 
@@ -78,7 +79,11 @@ impl Downloader {
 
         if self.keystore_path.is_some() || self.password.is_some() {
             if let Some(ks_path) = self.keystore_path.as_ref() {
-                let pwd_input = prompt_password(" Enter Master Password : ")?;
+                let pwd_input = resolve_secret(
+                    self.keystore_pass.as_deref(),
+                    "PIXELDRAIN_KEYSTORE_PASS",
+                    " Enter Master Password : ",
+                )?;
                 match check_master_password(ks_path, &pwd_input) {
                     Ok(res) => {
                         if res {
@@ -91,12 +96,12 @@ impl Downloader {
                     Err(e) => return Err(anyhow!("Error -> {}", e)),
                 }
             } else if let Some(inner_opt) = self.password.as_ref() {
-                if let Some(pwd) = inner_opt {
-                    password = Some(pwd.clone());
-                } else {
-                    let pwd_input = prompt_password(" Enter Password : ")?;
-                    password = Some(pwd_input);
-                }
+                let pwd_input = resolve_secret(
+                    inner_opt.as_deref(),
+                    "PIXELDRAIN_DECRYPT_PASS",
+                    " Enter Password : ",
+                )?;
+                password = Some(pwd_input);
             } else {
                 return Err(anyhow!("None of the possible cases matched....."));
             }
@@ -129,10 +134,9 @@ impl Downloader {
                         id: Some(&album_id),
                     };
 
-                    let album_details = album_api
-                        .get_files()
-                        .await
-                        .with_context(|| format!("Failed to fetch files for album '{}'", album_id))?;
+                    let album_details = album_api.get_files().await.with_context(|| {
+                        format!("Failed to fetch files for album '{}'", album_id)
+                    })?;
 
                     println!(
                         "  ✦ Album: '{}' ({} files)",
@@ -174,7 +178,11 @@ impl Downloader {
         let is_multi = total_files > 1;
 
         let transfer_progress = if is_multi {
-            Some(TransferProgress::new(TransferType::Download, total_files, total_transfer_size))
+            Some(TransferProgress::new(
+                TransferType::Download,
+                total_files,
+                total_transfer_size,
+            ))
         } else {
             None
         };
@@ -201,14 +209,17 @@ impl Downloader {
 
             // Call the download function stream
             let (total_length, reader) = api_client.download_file_stream(&file_id).await?;
-            let file_length = if total_length > 0 { total_length } else { item.size };
+            let file_length = if total_length > 0 {
+                total_length
+            } else {
+                item.size
+            };
 
             let single_progress;
             let active_progress = match &transfer_progress {
                 Some(p) => p,
                 None => {
-                    single_progress =
-                        TransferProgress::new(TransferType::Download, 1, file_length);
+                    single_progress = TransferProgress::new(TransferType::Download, 1, file_length);
                     &single_progress
                 }
             };
@@ -267,7 +278,8 @@ impl Downloader {
                             .clone();
 
                         let dec_res = if let Some(keystore_path) = &self.keystore_path {
-                            decyrpt_file_ks(
+                            // decyrpt_file_ks
+                            decrypt_file_ks(
                                 keystore_path,
                                 file_path,
                                 &self.output_path,
@@ -278,7 +290,7 @@ impl Downloader {
                                 },
                             )
                         } else {
-                            decyrpt_file_wp(
+                            decrypt_file_wp(
                                 file_path,
                                 &self.output_path,
                                 pwd,

@@ -61,6 +61,23 @@ The CLI will ask for your API key and a password.
 
 The API key is encrypted before being stored locally.
 
+You can also log in non-interactively (e.g. in scripts) using flags or environment variables:
+
+```bash
+pixeldrain-cli login --api-key "<API_KEY>" -P "<PASSWORD>"
+# or using environment variables:
+PIXELDRAIN_API_KEY="<API_KEY>" PIXELDRAIN_PASSWORD="<PASSWORD>" pixeldrain-cli login
+```
+
+# ❖ Global Options
+
+These flags work with any command (`login`, `upload`, `download`, `album`, `create-keystore`):
+
+| Option | Long form | Env Var | Description |
+|--------|-----------|---------|-------------|
+| `-P` | `--password <PASSWORD>` | `PIXELDRAIN_PASSWORD` | Password to decrypt your stored API key (or encrypt it during `login`) |
+| | `--api-key <API_KEY>` | `PIXELDRAIN_API_KEY` | Pixeldrain API key directly (bypasses stored credentials, or sets key during `login`) |
+
 # ❖ Upload
 
 ```text
@@ -69,12 +86,16 @@ pixeldrain-cli upload [OPTIONS]
 
 | Option | Long form | Description |
 |--------|-----------|-------------|
-| `-p` | `--paths` | File or directory paths to upload |
-| `-a` | `--album` | Create an album with the uploaded files |
-| `-i` | `--album-id` | Add uploaded files to an already existing album/list |
-| `-f` | `--formats` | File extensions to upload |
-| `-d` | `--delete` | delete uploaded files from local storage device [HDD / SSD] |
-| `-s` | `--state` | Path to a state file for tracking uploaded files and resuming uploads |
+| `-p` | `--paths <PATHS>...` | File or directory paths to upload |
+| `-a` | `--album <ALBUM NAME>...` | Create an album with the uploaded files |
+| `-i` | `--album-id <ALBUM ID>` | Add uploaded files to an already existing album/list |
+| `-f` | `--formats <FORMATS>...` | File extensions to upload |
+| `-d` | `--delete` | Delete uploaded files from local storage device [HDD / SSD] |
+| `-s` | `--state <STATE>` | Path to a state file for tracking uploaded files and resuming uploads |
+| | `--encrypt-pass [<PASSWORD>]` | Encrypt file(s) before upload using a password (prompts if value omitted, or uses `PIXELDRAIN_ENCRYPT_PASS`) |
+| | `--encrypt-keystore <KEYSTORE_PATH>` | Encrypt file(s) before upload using a keystore file |
+| | `--keystore-pass <PASSWORD>` | Master password for `--encrypt-keystore` (or uses `PIXELDRAIN_KEYSTORE_PASS`) |
+| `-c` | `--chunk-size <CHUNK_SIZE>` | Chunk/buffer size used while hashing & encrypting files (1–100 MB, default: `1`) |
 
 
 ## ✦ Upload a file
@@ -166,6 +187,73 @@ pixeldrain-cli upload -p ./videos/ -s ./videos_upload_state
 # albumn id is also stored in state file once album is created in pixeldrain.
 ```
 After the files are uploaded, the CLI adds those files into specified albumn.
+
+## ❖ Download
+
+```text
+pixeldrain-cli download [OPTIONS] --path <PATH>
+```
+
+| Option | Long form | Description |
+|--------|-----------|-------------|
+| `-l` | `--links <LINKS>...` | Pixeldrain file/album URLs or file IDs to download |
+| `-p` | `--path <PATH>` | Output path where file(s) will be downloaded & saved |
+| `-d` | `--decrypt-pass [<PASSWORD>]` | Decrypt downloaded files with password (prompts if value omitted, or uses `PIXELDRAIN_DECRYPT_PASS`) |
+| `-k` | `--decrypt-keystore <KEYSTORE_PATH>` | Decrypt downloaded files with a keystore file |
+| | `--keystore-pass <PASSWORD>` | Master password for `--decrypt-keystore` (or uses `PIXELDRAIN_KEYSTORE_PASS`) |
+
+Examples:
+
+```bash
+# Download a file or album
+pixeldrain-cli download -l "https://pixeldrain.com/u/<id>" -p ./downloads
+
+# Download and decrypt using a password
+pixeldrain-cli download -l "https://pixeldrain.com/u/<id>" -p ./downloads -d "<PASSWORD>"
+
+# Download and decrypt using a keystore non-interactively
+pixeldrain-cli download -l "https://pixeldrain.com/u/<id>" -p ./downloads -k ./keystore.json --keystore-pass "<KS_PASS>"
+```
+
+## ❖ Create Keystore
+
+```text
+pixeldrain-cli create-keystore -o <FILE_PATH> [OPTIONS]
+```
+
+| Option | Long form | Description |
+|--------|-----------|-------------|
+| `-o` | `--file-path <FILE_PATH>` | Output path for keystore |
+| | `--keystore-pass <PASSWORD>` | Master password for the new keystore (or uses `PIXELDRAIN_KEYSTORE_PASS`, or `-P`) |
+
+Example:
+
+```bash
+pixeldrain-cli create-keystore -o ./keystore.json --keystore-pass "<KS_PASS>"
+```
+
+## ❖ Automation / Bash Scripting
+
+To avoid interactive password prompts in scripts or CI/CD, pass credentials via CLI flags or environment variables:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Option 1: Using environment variables (recommended so secrets stay out of process args)
+export PIXELDRAIN_PASSWORD="my-credentials-password"
+export PIXELDRAIN_KEYSTORE_PASS="my-keystore-master-password"
+
+pixeldrain-cli upload -p ./backups --encrypt-keystore ./keystore.json
+pixeldrain-cli album list
+
+# Option 2: Passing API key directly without stored credentials
+PIXELDRAIN_API_KEY="my-api-key" pixeldrain-cli upload -p ./file.tar.gz --encrypt-pass "file-secret"
+
+# Option 3: Passing flags directly
+pixeldrain-cli download -l "https://pixeldrain.com/u/<id>" -p ./out \
+  -k ./keystore.json --keystore-pass "my-keystore-master-password" -P "my-credentials-password"
+```
 
 ## ❖ Album
 

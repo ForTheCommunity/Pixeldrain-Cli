@@ -9,14 +9,21 @@ use tokio::sync::{Mutex, mpsc};
 
 use crate::{
     api::endpoints::album::{AlbumApi, AlbumDeleteEvent},
-    core::{format_bytes, storage::get_api_key},
+    core::{
+        format_bytes,
+        storage::{AuthOptions, resolve_api_key},
+    },
 };
 
 pub struct AlbumAction {}
 
 impl AlbumAction {
     pub async fn show_all() -> Result<()> {
-        let api_key = get_api_key()?;
+        Self::show_all_with_auth(&AuthOptions::default()).await
+    }
+
+    pub async fn show_all_with_auth(auth: &AuthOptions) -> Result<()> {
+        let api_key = resolve_api_key(auth)?;
         let album_api = AlbumApi {
             api_key: api_key.as_str(),
             id: None,
@@ -39,7 +46,11 @@ impl AlbumAction {
     }
 
     pub async fn list_album(id: String) -> Result<()> {
-        let api_key = get_api_key()?;
+        Self::list_album_with_auth(id, &AuthOptions::default()).await
+    }
+
+    pub async fn list_album_with_auth(id: String, auth: &AuthOptions) -> Result<()> {
+        let api_key = resolve_api_key(auth)?;
 
         let album_api = AlbumApi {
             api_key: &api_key,
@@ -76,7 +87,11 @@ impl AlbumAction {
     }
 
     pub async fn delete(id: String) -> Result<()> {
-        let api_key = get_api_key()?;
+        Self::delete_with_auth(id, &AuthOptions::default()).await
+    }
+
+    pub async fn delete_with_auth(id: String, auth: &AuthOptions) -> Result<()> {
+        let api_key = resolve_api_key(auth)?;
 
         let album_api = AlbumApi {
             api_key: &api_key,
@@ -88,7 +103,11 @@ impl AlbumAction {
     }
 
     pub async fn hard_delete(id: String) -> Result<()> {
-        let api_key = get_api_key()?;
+        Self::hard_delete_with_auth(id, &AuthOptions::default()).await
+    }
+
+    pub async fn hard_delete_with_auth(id: String, auth: &AuthOptions) -> Result<()> {
+        let api_key = resolve_api_key(auth)?;
 
         let album_api = AlbumApi {
             api_key: &api_key,

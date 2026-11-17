@@ -28,6 +28,7 @@ pub struct UploadPipelineOptions {
     // Password used to encrypt file before uploading it...
     pub enc_password: Option<Option<String>>,
     pub enc_keystore: Option<PathBuf>,
+    pub enc_keystore_pass: Option<String>,
     pub chunk_size: u8,
     pub max_concurrent_small_uploads: usize,
 }
@@ -48,6 +49,7 @@ impl Default for UploadPipelineOptions {
             state: None,
             enc_password: None,
             enc_keystore: None,
+            enc_keystore_pass: None,
             chunk_size: u8::default(),
             max_concurrent_small_uploads: 10,
         }

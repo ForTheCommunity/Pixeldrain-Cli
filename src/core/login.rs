@@ -1,8 +1,18 @@
 use anyhow::{Result, anyhow};
 
-use crate::core::{crypto, password::prompt_password, storage};
+use crate::core::{
+    crypto,
+    password::{env_non_empty, resolve_secret, resolve_secret_confirmed},
+    storage::{self, AuthOptions},
+};
 
 pub fn login() -> Result<()> {
+    login_with_auth(&AuthOptions::default())
+}
+
+/// Logs in and saves encrypted credentials, using CLI/env overrides when provided
+/// and prompting interactively only for missing values.
+pub fn login_with_auth(auth: &AuthOptions) -> Result<()> {
 //     println!(
 // 
 //         
@@ -12,8 +22,12 @@ pub fn login() -> Result<()> {
 //         so use a rememberable password."
 //     );
 
-println!(
-    r#"
+    let needs_api_prompt =
+        auth.api_key.is_none() && env_non_empty("PIXELDRAIN_API_KEY").is_none();
+
+    if needs_api_prompt {
+        println!(
+            r#"
     🛠 API KEY SETUP
 
     Add your API KEY.
@@ -24,16 +38,26 @@ println!(
     This password will be needed to decrypt your API KEY while
     uploading files, so please use a memorable password.
 "#
-);
-
-    let api_key = prompt_password("Pixeldrain API key: ")?;
-
-    let password = prompt_password("Encryption password: ")?;
-    let confirmation = prompt_password("Confirm password: ")?;
-
-    if password != confirmation {
-        return Err(anyhow!("Password didn't matched..."));
+        );
     }
+
+    let api_key = resolve_secret(
+        auth.api_key.as_deref(),
+        "PIXELDRAIN_API_KEY",
+        "Pixeldrain API key: ",
+    )?;
+
+    if api_key.trim().is_empty() {
+        return Err(anyhow!("API key cannot be empty."));
+    }
+
+    let password = resolve_secret_confirmed(
+        auth.password.as_deref(),
+        "PIXELDRAIN_PASSWORD",
+        "Encryption password: ",
+        "Confirm password: ",
+        "Password didn't matched...",
+    )?;
 
     let encrypted = crypto::encrypt(&api_key, &password)?;
 
