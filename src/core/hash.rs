@@ -1,6 +1,6 @@
 // computing blake3 hash
 
-use std::path::PathBuf;
+use std::path::Path;
 
 use anyhow::Result;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -9,7 +9,7 @@ use tokio::{fs::File, io::AsyncReadExt};
 pub async fn compute_b3hash(
     chunk_size: usize,
     file_size: u64,
-    file_path: &PathBuf,
+    file_path: &Path,
 ) -> Result<String> {
     compute_b3hash_inner(chunk_size, file_size, file_path, None).await
 }
@@ -17,7 +17,7 @@ pub async fn compute_b3hash(
 pub async fn compute_b3hash_with_pb(
     chunk_size: usize,
     file_size: u64,
-    file_path: &PathBuf,
+    file_path: &Path,
     multi_pb: Option<(&MultiProgress, &ProgressBar)>,
 ) -> Result<String> {
     compute_b3hash_inner(chunk_size, file_size, file_path, multi_pb).await
@@ -26,7 +26,7 @@ pub async fn compute_b3hash_with_pb(
 async fn compute_b3hash_inner(
     chunk_size: usize,
     file_size: u64,
-    file_path: &PathBuf,
+    file_path: &Path,
     multi_pb: Option<(&MultiProgress, &ProgressBar)>,
 ) -> Result<String> {
     let file_name = file_path
@@ -51,8 +51,8 @@ async fn compute_b3hash_inner(
     );
 
     let mut hasher = blake3::Hasher::new();
-    let mut source_file = File::open(&file_path).await?;
-    let mut buffer = vec![0u8; chunk_size];
+    let mut source_file = File::open(file_path).await?;
+    let mut buffer = vec![0u8; chunk_size.max(1)];
     let mut hash_reader = tokio::io::BufReader::new(&mut source_file);
 
     loop {

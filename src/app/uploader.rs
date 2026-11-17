@@ -11,11 +11,15 @@ use crate::{
     core::{
         collector::collect_files,
         format_bytes,
+        hash::compute_b3hash_with_pb,
         progress::{ProgressReader, TransferProgress, TransferType},
         state::upload::state::UploadState,
     },
 };
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 #[derive(Debug)]
 pub struct UploadPipelineOptions {
@@ -50,7 +54,7 @@ impl Default for UploadPipelineOptions {
             enc_password: None,
             enc_keystore: None,
             enc_keystore_pass: None,
-            chunk_size: u8::default(),
+            chunk_size: 1,
             max_concurrent_small_uploads: 10,
         }
     }
@@ -119,6 +123,7 @@ impl UploadPipeline {
 
         // grouping files by threshold.
         const SMALL_FILE_THRESHOLD: u64 = 20 * 1024 * 1024; // 20MB
+        let chunk_size = (self.options.chunk_size.max(1) as usize) * 1024 * 1024;
 
         let mut small_files: Vec<(PathBuf, u64)> = Vec::new();
         let mut large_files: Vec<(PathBuf, u64)> = Vec::new();
@@ -138,9 +143,13 @@ impl UploadPipeline {
             };
 
             let file_size = metadata.len();
+            let file_name = Self::file_name_for(&a_file);
 
-            // skip files that were already uploaded with the same size.
-            if let Some(existing_id) = upload_state.get_file_id(&a_file, file_size) {
+            // Skip files that were already uploaded with the same name, size, and BLAKE3 hash.
+            if let Some(existing_id) = upload_state
+                .file_lookup(&file_name, file_size, &a_file, chunk_size)
+                .await?
+            {
                 skipped_file_ids.push(existing_id.to_string());
                 continue;
             }
@@ -286,6 +295,12 @@ impl UploadPipeline {
         Ok(())
     }
 
+    fn file_name_for(path: &Path) -> String {
+        path.file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "file".to_string())
+    }
+
     /// Saves upload state to disk if a state path is configured.
     async fn save_state(upload_state: &Arc<Mutex<UploadState>>, state_path: &Option<PathBuf>) {
         if let Some(path) = state_path {
@@ -307,6 +322,7 @@ impl UploadPipeline {
         let semaphore = Arc::new(Semaphore::new(self.options.max_concurrent_small_uploads));
         let mut join_set = JoinSet::new();
         let delete_after = self.options.delete_after;
+        let chunk_size = (self.options.chunk_size.max(1) as usize) * 1024 * 1024;
 
         for (path, size) in files {
             let permit = semaphore.clone().acquire_owned().await?;
@@ -318,7 +334,19 @@ impl UploadPipeline {
             join_set.spawn(async move {
                 let _permit = permit; // hold a slot until task finishes
 
-                let file_name = path.file_name().unwrap().to_string_lossy().to_string();
+                let file_name = Self::file_name_for(&path);
+                let file_b3hash = if state_path.is_some() {
+                    compute_b3hash_with_pb(
+                        chunk_size,
+                        size,
+                        &path,
+                        Some((&progress.multi_pb, &progress.overall_pb)),
+                    )
+                    .await?
+                } else {
+                    String::new()
+                };
+
                 let file_pb = progress.file_started(&file_name, size);
 
                 let file = match fs::File::open(&path).await {
@@ -351,10 +379,12 @@ impl UploadPipeline {
                         progress.file_finished_with_url(&file_pb, &file_name, true, Some(&url));
 
                         // Record uploaded file into state.
-                        upload_state
-                            .lock()
-                            .await
-                            .add_file(path.clone(), res.id.clone(), size);
+                        upload_state.lock().await.add_file(
+                            file_name.clone(),
+                            res.id.clone(),
+                            size,
+                            file_b3hash,
+                        );
                         Self::save_state(&upload_state, &state_path).await;
 
                         // Delete local file if -d flag was specified
@@ -419,13 +449,21 @@ impl UploadPipeline {
         has_album: bool,
     ) -> Result<Vec<UploadResponse>> {
         let mut results = Vec::new();
+        let chunk_size = (self.options.chunk_size.max(1) as usize) * 1024 * 1024;
 
         for (path, size) in files {
-            let file_name = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("file")
-                .to_string();
+            let file_name = Self::file_name_for(&path);
+            let file_b3hash = if state_path.is_some() {
+                compute_b3hash_with_pb(
+                    chunk_size,
+                    size,
+                    &path,
+                    Some((&progress.multi_pb, &progress.overall_pb)),
+                )
+                .await?
+            } else {
+                String::new()
+            };
 
             let file_pb = progress.file_started(&file_name, size);
 
@@ -446,10 +484,12 @@ impl UploadPipeline {
                     progress.file_finished_with_url(&file_pb, &file_name, true, Some(&url));
 
                     // Record uploaded file into state.
-                    upload_state
-                        .lock()
-                        .await
-                        .add_file(path.clone(), res.id.clone(), size);
+                    upload_state.lock().await.add_file(
+                        file_name.clone(),
+                        res.id.clone(),
+                        size,
+                        file_b3hash,
+                    );
                     Self::save_state(&upload_state, &state_path).await;
 
                     // Sequential album update for single large file

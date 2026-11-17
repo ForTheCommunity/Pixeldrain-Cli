@@ -6,6 +6,8 @@ use std::{
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
+use crate::core::hash::compute_b3hash;
+
 /// Version of the on-disk upload state format.
 const STATE_VERSION: u32 = 1;
 
@@ -16,10 +18,10 @@ pub struct UploadState {
     // album id
     #[serde(default)]
     pub album_id: Option<String>,
-    // Maps a local file path to information about its
+    // Maps a file name to information about its
     // successfully uploaded Pixeldrain file.
     #[serde(default)]
-    pub files: HashMap<PathBuf, StateFile>,
+    pub files: HashMap<String, StateFile>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -28,6 +30,9 @@ pub struct StateFile {
     pub id: String,
     // Size of the local file at the time it was uploaded.
     pub size: u64,
+    // blake3 hash of original file.
+    #[serde(default)]
+    pub blake3_hash: String,
 }
 
 impl Default for UploadState {
@@ -91,19 +96,38 @@ impl UploadState {
     }
 
     /// Returns the saved Pixeldrain file ID if this local file
-    /// is already recorded with the same file size.
+    /// matches by file name, size, and BLAKE3 hash.
     ///
-    /// A changed file is treated as a new file.
-    pub fn get_file_id(&self, path: &Path, current_size: u64) -> Option<&str> {
-        self.files
-            .get(path)
-            .filter(|saved| saved.size == current_size)
-            .map(|saved| saved.id.as_str())
+    /// A changed or legacy (unhashed) file is treated as a cache miss.
+    pub async fn file_lookup(
+        &self,
+        file_name: &str,
+        file_size: u64,
+        file_path: &Path,
+        chunk_size: usize,
+    ) -> Result<Option<&str>> {
+        if let Some(file) = self.files.get(file_name) {
+            if file.size == file_size && !file.blake3_hash.is_empty() {
+                let file_hash = compute_b3hash(chunk_size, file_size, file_path).await?;
+                if file_hash == file.blake3_hash {
+                    return Ok(Some(file.id.as_str()));
+                }
+            }
+        }
+
+        Ok(None)
     }
 
     /// Records a successfully uploaded file.
-    pub fn add_file(&mut self, path: PathBuf, file_id: String, size: u64) {
-        self.files.insert(path, StateFile { id: file_id, size });
+    pub fn add_file(&mut self, file_name: String, file_id: String, size: u64, blake3_hash: String) {
+        self.files.insert(
+            file_name,
+            StateFile {
+                id: file_id,
+                size,
+                blake3_hash,
+            },
+        );
     }
 
     // get album id
@@ -120,5 +144,117 @@ impl UploadState {
     // currently recorded in the state.
     pub fn get_all_file_ids(&self) -> Vec<String> {
         self.files.values().map(|file| file.id.clone()).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_upload_state_save_load_and_hash_lookup() {
+        let base = std::env::temp_dir().join(format!(
+            "pixeldrain_cli_state_test_{}",
+            std::process::id()
+        ));
+        let dir_a = base.join("dir_a");
+        let dir_b = base.join("dir_b");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&dir_a).unwrap();
+        std::fs::create_dir_all(&dir_b).unwrap();
+
+        let file_a = dir_a.join("sample.bin");
+        let file_b = dir_b.join("sample.bin");
+        let content_1 = b"hello world 1234";
+        std::fs::write(&file_a, content_1).unwrap();
+        std::fs::write(&file_b, content_1).unwrap();
+
+        let hash_1 = compute_b3hash(1024, content_1.len() as u64, &file_a)
+            .await
+            .unwrap();
+
+        let mut state = UploadState::default();
+        state.set_album_id("album123".to_string());
+        state.add_file(
+            "sample.bin".to_string(),
+            "file123".to_string(),
+            content_1.len() as u64,
+            hash_1.clone(),
+        );
+
+        let state_path = base.join("state.json");
+        state.save(&state_path).await.unwrap();
+
+        let loaded = UploadState::load(&state_path).await.unwrap();
+        assert_eq!(loaded.get_album_id(), Some("album123"));
+        assert!(loaded.files.contains_key("sample.bin"));
+        assert_eq!(loaded.files["sample.bin"].blake3_hash, hash_1);
+
+        // Matches from a different directory path because lookup is by filename + size + hash.
+        assert_eq!(
+            loaded
+                .file_lookup("sample.bin", content_1.len() as u64, &file_b, 1024)
+                .await
+                .unwrap(),
+            Some("file123")
+        );
+
+        // Same filename and same byte length, but modified content -> cache miss.
+        let content_modified_same_len = b"HELLO WORLD 1234";
+        assert_eq!(content_modified_same_len.len(), content_1.len());
+        std::fs::write(&file_b, content_modified_same_len).unwrap();
+        assert_eq!(
+            loaded
+                .file_lookup("sample.bin", content_1.len() as u64, &file_b, 1024)
+                .await
+                .unwrap(),
+            None
+        );
+
+        // Different size -> cache miss.
+        assert_eq!(
+            loaded
+                .file_lookup("sample.bin", (content_1.len() + 1) as u64, &file_b, 1024)
+                .await
+                .unwrap(),
+            None
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[tokio::test]
+    async fn test_upload_state_legacy_entry_without_hash_misses() {
+        let base = std::env::temp_dir().join(format!(
+            "pixeldrain_cli_state_legacy_test_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+
+        let file = base.join("legacy.txt");
+        std::fs::write(&file, b"abc").unwrap();
+
+        let state_path = base.join("legacy_state.json");
+        let legacy_json = r#"{
+  "version": 1,
+  "album_id": "alb_old",
+  "files": {
+    "legacy.txt": { "id": "old_id", "size": 3 }
+  }
+}"#;
+        std::fs::write(&state_path, legacy_json).unwrap();
+
+        let loaded = UploadState::load(&state_path).await.unwrap();
+        assert_eq!(loaded.get_album_id(), Some("alb_old"));
+        assert_eq!(
+            loaded
+                .file_lookup("legacy.txt", 3, &file, 1024)
+                .await
+                .unwrap(),
+            None
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 }
