@@ -12,9 +12,11 @@ use crate::{
     api::endpoints::album::AlbumApi,
     app::uploader::UploadPipeline,
     core::{
-        collector::collect_files, exceeds_max_upload_size, format_bytes,
+        collector::collect_files,
+        exceeds_max_upload_size, format_bytes,
         progress::{ProgressReader, TransferProgress, TransferType},
-        state::upload::enc_state::EncUploadState, storage::project_data_dir,
+        state::upload::enc_state::EncUploadState,
+        storage::project_data_dir,
     },
 };
 
@@ -131,11 +133,16 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
         total_files,
         format_bytes(total_transfer_size)
     );
+    println!("{}", transformer_notice());
 
     let is_multi = total_files > 1;
 
     let progress = if is_multi {
-        Some(TransferProgress::new(TransferType::Upload, total_files, total_transfer_size))
+        Some(TransferProgress::new(
+            TransferType::Upload,
+            total_files,
+            total_transfer_size,
+        ))
     } else {
         None
     };
@@ -175,7 +182,13 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
 
         // computing blake3 Hash of orignal file.
         let original_file_b3hash = if let Some(p) = &progress {
-            compute_b3hash_with_pb(chunk_size, file_size, &file, Some((&p.multi_pb, &p.overall_pb))).await?
+            compute_b3hash_with_pb(
+                chunk_size,
+                file_size,
+                &file,
+                Some((&p.multi_pb, &p.overall_pb)),
+            )
+            .await?
         } else {
             compute_b3hash(chunk_size, file_size, &file).await?
         };
@@ -310,7 +323,12 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
             Ok(resp) => {
                 let _ = fs::remove_file(&encrypted_file).await;
                 let url = format!("https://pixeldrain.com/u/{}", resp.id);
-                active_progress.file_finished_with_url(&file_pb, &orignal_filename, true, Some(&url));
+                active_progress.file_finished_with_url(
+                    &file_pb,
+                    &orignal_filename,
+                    true,
+                    Some(&url),
+                );
                 if !is_multi {
                     active_progress.all_finished();
                 }
@@ -394,7 +412,8 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
             match fs::remove_file(&file).await {
                 Ok(_) => {
                     if let Some(p) = &progress {
-                        p.overall_pb.println(format!("  🗑 Deleted orignal file: {}", file.display()));
+                        p.overall_pb
+                            .println(format!("  🗑 Deleted orignal file: {}", file.display()));
                     } else {
                         println!("  🗑 Deleted orignal file: {}", file.display());
                     }
@@ -434,6 +453,16 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
     }
 
     Ok(())
+}
+
+const TRANSFORMER_GIT_URL: &str = "https://gitlab.com/ForTheCommunity/Transformer.git";
+
+/// Returns the informational banner noting the external `transformer` dependency.
+fn transformer_notice() -> String {
+    format!(
+        "   ✦ Encryption      : pixeldrain-cli uses transformer tool for encrypting and decrypting files.\n   ✦ For more info visit : {}",
+        TRANSFORMER_GIT_URL
+    )
 }
 
 async fn save_state(upload_state: &EncUploadState, state_path: &Option<PathBuf>) {
