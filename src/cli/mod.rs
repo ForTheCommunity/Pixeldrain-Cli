@@ -51,10 +51,10 @@ pub enum Commands {
     CreateKeystore {
         /// Output path for keystore
         #[arg(short = 'o', long)]
-        file_path: PathBuf,
+        file_path: Option<PathBuf>,
 
         /// Master password for the new keystore.
-        /// Can also be set via PIXELDRAIN_KEYSTORE_PASS.
+        /// Prompts securely if omitted (or uses PIXELDRAIN_KEYSTORE_PASS environment variable).
         #[arg(long, value_name = "PASSWORD")]
         keystore_pass: Option<String>,
     },
@@ -74,7 +74,7 @@ pub struct DownloadArgs {
     pub path: Option<PathBuf>,
 
     /// Decrypt downloaded files with password.
-    /// Prompts if flag is passed without a value (or uses PIXELDRAIN_DECRYPT_PASS).
+    /// Prompts securely if passed without a value (or uses PIXELDRAIN_DECRYPT_PASS environment variable).
     #[arg(
         short = 'd',
         long,
@@ -93,7 +93,7 @@ pub struct DownloadArgs {
     pub decrypt_keystore: Option<PathBuf>,
 
     /// Master password for the decryption keystore file.
-    /// Can also be set via PIXELDRAIN_KEYSTORE_PASS.
+    /// Prompts securely if omitted (or uses PIXELDRAIN_KEYSTORE_PASS environment variable).
     #[arg(
         long,
         requires = "decrypt_keystore",
@@ -139,7 +139,7 @@ pub struct UploadArgs {
     state: Option<PathBuf>,
 
     /// Encrypt file(s) before upload directly using a password (self-contained).
-    /// Prompts if flag is passed without a value (or uses PIXELDRAIN_ENCRYPT_PASS).
+    /// Prompts securely if passed without a value (or uses PIXELDRAIN_ENCRYPT_PASS environment variable).
     #[arg(
         long,
         conflicts_with = "encrypt_keystore",
@@ -152,7 +152,7 @@ pub struct UploadArgs {
     pub encrypt_keystore: Option<PathBuf>,
 
     /// Master password for the encryption keystore file.
-    /// Can also be set via PIXELDRAIN_KEYSTORE_PASS.
+    /// Prompts securely if omitted (or uses PIXELDRAIN_KEYSTORE_PASS environment variable).
     #[arg(
         long,
         requires = "encrypt_keystore",
@@ -390,8 +390,17 @@ mod tests {
                 file_path,
                 keystore_pass,
             }) => {
-                assert_eq!(file_path, PathBuf::from("ks.json"));
+                assert_eq!(file_path, Some(PathBuf::from("ks.json")));
                 assert_eq!(keystore_pass.as_deref(), Some("master"));
+            }
+            _ => panic!("expected CreateKeystore command"),
+        }
+
+        // Running create-keystore without arguments parses so main can display help
+        let cli_empty = Cli::try_parse_from(["pixeldrain-cli", "create-keystore"]).unwrap();
+        match cli_empty.command {
+            Some(Commands::CreateKeystore { file_path, .. }) => {
+                assert!(file_path.is_none());
             }
             _ => panic!("expected CreateKeystore command"),
         }

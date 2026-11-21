@@ -71,6 +71,14 @@ async fn main() {
             file_path,
             keystore_pass,
         }) => {
+            let Some(file_path) = file_path else {
+                let mut cmd = Cli::command();
+                if let Some(sub) = cmd.find_subcommand_mut("create-keystore") {
+                    let _ = sub.print_help();
+                }
+                return;
+            };
+
             let pass = keystore_pass.as_deref().or(auth.password.as_deref());
             if let Err(e) = create_ks(&file_path, pass) {
                 eprintln!("   Error -> {}", e);
