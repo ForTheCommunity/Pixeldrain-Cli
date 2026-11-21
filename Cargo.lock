@@ -1139,6 +1139,7 @@ dependencies = [
  "rand",
  "reqwest",
  "rpassword",
+ "semver",
  "serde",
  "serde_json",
  "tabled",

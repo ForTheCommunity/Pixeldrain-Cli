@@ -76,6 +76,17 @@ pub enum Commands {
 
     /// Show information about this project.
     About,
+
+    /// Check for updates and view the latest changelog. (alias: update)
+    #[command(alias = "update")]
+    CheckUpdate(CheckUpdateArgs),
+}
+
+#[derive(Args, Debug, Default, Clone)]
+pub struct CheckUpdateArgs {
+    /// Show changelog even if already on the latest version.
+    #[arg(short = 'c', long)]
+    pub changelog: bool,
 }
 
 #[derive(Args, Debug)]
@@ -243,6 +254,20 @@ mod tests {
     fn test_logout_command() {
         let cli = Cli::try_parse_from(["pixeldrain-cli", "logout"]).unwrap();
         assert!(matches!(cli.command, Some(Commands::Logout)));
+    }
+
+    #[test]
+    fn test_check_update_command() {
+        let cli = Cli::try_parse_from(["pixeldrain-cli", "check-update"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::CheckUpdate(_))));
+
+        let cli_alias = Cli::try_parse_from(["pixeldrain-cli", "update", "-c"]).unwrap();
+        match cli_alias.command {
+            Some(Commands::CheckUpdate(args)) => {
+                assert!(args.changelog);
+            }
+            _ => panic!("expected CheckUpdate command"),
+        }
     }
 
     #[test]

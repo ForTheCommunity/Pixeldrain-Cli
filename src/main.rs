@@ -1,6 +1,6 @@
 use clap::{CommandFactory, Parser};
 use pixeldrain_cli::{
-    app::about::show_about,
+    app::{about::show_about, updater::{check_for_updates, get_cached_update_notice}},
     cli::{
         AlbumCli, Cli,
         Commands::{self},
@@ -97,6 +97,17 @@ async fn main() {
 
         Some(Commands::About) => show_about(),
 
+        Some(Commands::CheckUpdate(args)) => {
+            if let Err(e) = check_for_updates(args.changelog).await {
+                eprintln!("Error checking for updates: {}", e);
+                std::process::exit(1);
+            }
+        }
+
         None => Cli::command().print_help().expect("failed to print help"),
+    }
+
+    if let Some(notice) = get_cached_update_notice() {
+        eprintln!("\n{}", notice);
     }
 }
