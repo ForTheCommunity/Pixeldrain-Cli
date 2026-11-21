@@ -26,6 +26,7 @@ struct DownloadItem {
 enum UrlTarget {
     File(String),
     Album(String),
+    Id(String),
 }
 
 fn parse_url_target(url: &str) -> Result<UrlTarget> {
@@ -52,15 +53,54 @@ fn parse_url_target(url: &str) -> Result<UrlTarget> {
 
         Ok(UrlTarget::File(id.to_string()))
     } else if !clean.contains('/') && !clean.is_empty() {
-        // Fallback for raw file ID
+        // Fallback for raw ID (could be a file or an album)
         let id = clean.split(['?', '#']).next().unwrap_or(clean);
         if id.is_empty() {
             return Err(anyhow!("Invalid pixeldrain URL: {}", url));
         }
-        Ok(UrlTarget::File(id.to_string()))
+        Ok(UrlTarget::Id(id.to_string()))
     } else {
         Err(anyhow!("Invalid pixeldrain URL: {}", url))
     }
+}
+
+async fn fetch_file_item(api_client: &ApiClient, file_id: &str) -> Result<DownloadItem> {
+    let file_info = api_client
+        .get_file_info(file_id)
+        .await
+        .with_context(|| format!("Failed to fetch file info for '{}'", file_id))?;
+    Ok(DownloadItem {
+        id: file_id.to_string(),
+        name: file_info.name,
+        size: file_info.size,
+    })
+}
+
+async fn fetch_album_items(api_key: &str, album_id: &str) -> Result<Vec<DownloadItem>> {
+    let album_api = AlbumApi {
+        api_key,
+        id: Some(album_id),
+    };
+    let album_details = album_api
+        .get_files()
+        .await
+        .with_context(|| format!("Failed to fetch files for album '{}'", album_id))?;
+
+    println!(
+        "  ✦ Album: '{}' ({} files)",
+        album_details.title,
+        album_details.files.len()
+    );
+
+    Ok(album_details
+        .files
+        .into_iter()
+        .map(|file| DownloadItem {
+            id: file.id,
+            name: file.name,
+            size: file.size,
+        })
+        .collect())
 }
 
 pub struct Downloader {
@@ -122,38 +162,24 @@ impl Downloader {
         for url in self.urls {
             match parse_url_target(&url)? {
                 UrlTarget::File(file_id) => {
-                    let file_info = api_client
-                        .get_file_info(&file_id)
-                        .await
-                        .with_context(|| format!("Failed to fetch file info for '{}'", file_id))?;
-                    items.push(DownloadItem {
-                        id: file_id,
-                        name: file_info.name,
-                        size: file_info.size,
-                    });
+                    items.push(fetch_file_item(&api_client, &file_id).await?);
                 }
                 UrlTarget::Album(album_id) => {
-                    let album_api = AlbumApi {
-                        api_key,
-                        id: Some(&album_id),
-                    };
-
-                    let album_details = album_api.get_files().await.with_context(|| {
-                        format!("Failed to fetch files for album '{}'", album_id)
-                    })?;
-
-                    println!(
-                        "  ✦ Album: '{}' ({} files)",
-                        album_details.title,
-                        album_details.files.len()
-                    );
-
-                    for file in album_details.files {
-                        items.push(DownloadItem {
-                            id: file.id,
-                            name: file.name,
-                            size: file.size,
-                        });
+                    items.extend(fetch_album_items(api_key, &album_id).await?);
+                }
+                UrlTarget::Id(raw_id) => {
+                    // Try resolving as a file first; fallback to album if not found
+                    match fetch_file_item(&api_client, &raw_id).await {
+                        Ok(item) => items.push(item),
+                        Err(_) => match fetch_album_items(api_key, &raw_id).await {
+                            Ok(album_items) => items.extend(album_items),
+                            Err(_) => {
+                                return Err(anyhow!(
+                                    "Could not find any file or album with ID '{}'",
+                                    raw_id
+                                ));
+                            }
+                        },
                     }
                 }
             }
@@ -488,7 +514,7 @@ mod tests {
         );
         assert_eq!(
             parse_url_target("abc123xyz").unwrap(),
-            UrlTarget::File("abc123xyz".to_string())
+            UrlTarget::Id("abc123xyz".to_string())
         );
     }
 

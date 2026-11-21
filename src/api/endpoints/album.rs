@@ -39,11 +39,11 @@ impl<'a> AlbumApi<'a> {
 
     pub async fn get_files(&self) -> Result<AlbumDetailResponse> {
         let url = format!("{}/list/{}", API_ENDPOINT, self.id.unwrap());
-        let response = reqwest::Client::new()
-            .get(url)
-            .basic_auth("", Some(self.api_key))
-            .send()
-            .await?;
+        let mut req = reqwest::Client::new().get(url);
+        if !self.api_key.is_empty() {
+            req = req.basic_auth("", Some(self.api_key));
+        }
+        let response = req.send().await?;
 
         if response.status().is_success() {
             Ok(response.json::<AlbumDetailResponse>().await?)

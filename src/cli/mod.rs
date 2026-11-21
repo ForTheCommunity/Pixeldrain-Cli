@@ -65,7 +65,7 @@ pub enum Commands {
 
 #[derive(Args, Debug)]
 pub struct DownloadArgs {
-    /// link/s of file/s to download.
+    /// URLs or IDs of files or albums to download.
     #[arg(short = 'l', long, num_args = 1..)]
     pub links: Vec<String>,
 
