@@ -466,9 +466,15 @@ const TRANSFORMER_GIT_URL: &str = "https://gitlab.com/ForTheCommunity/Transforme
 
 /// Returns the informational banner noting the external `transformer` dependency.
 fn transformer_notice() -> String {
+    let cyan = "\x1b[1;36m";
+    let dim = "\x1b[90m";
+    let reset = "\x1b[0m";
+
     format!(
-        "   ✦ Encryption      : pixeldrain-cli uses transformer tool for encrypting and decrypting files.\n   ✦ For more info visit : {}",
-        TRANSFORMER_GIT_URL
+        "\n   {cyan}┌───── Encryption (Transformer) ─────────────────────────────────────────────┐{reset}\n   \
+           {cyan}│{reset}  pixeldrain-cli uses transformer for encrypting/decrypting files.          {cyan}│{reset}\n   \
+           {cyan}│{reset}  {dim}For more info:{reset} {TRANSFORMER_GIT_URL}         {cyan}│{reset}\n   \
+           {cyan}└────────────────────────────────────────────────────────────────────────────┘{reset}\n"
     )
 }
 
