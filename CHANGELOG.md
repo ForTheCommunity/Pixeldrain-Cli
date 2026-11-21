@@ -10,6 +10,7 @@
 - Added global `--api-key` and `-P` / `--password` options and environment variable support across all subcommands for seamless scripting.
 - Improved CLI error handling to display full subcommand help when required arguments are omitted.
 - Added update instructions for Cargo, AM/AppMan, GitLab, and GitHub.
+- Expanded release build targets to 13 targets: added Android ARM64 for Termux, Linux ARM64 MUSL, ARMv7 (GNU & MUSL), 32-bit x86 i686 (GNU & MUSL), and RISC-V 64.
 
 ## [0.1.5] - 2026-10-11
 - Decoupled old messy monolithic code

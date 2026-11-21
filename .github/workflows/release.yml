@@ -13,7 +13,7 @@ jobs:
     name: Build ${{ matrix.name }}
 
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           # Windows
@@ -36,7 +36,7 @@ jobs:
             binary: target/x86_64-apple-darwin/release/pixeldrain-cli
             asset: pixeldrain-cli-macos-x86_64
 
-          # Linux
+          # Linux x86_64
           - name: Linux x86_64 GNU
             os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
@@ -49,11 +49,64 @@ jobs:
             binary: target/x86_64-unknown-linux-musl/release/pixeldrain-cli
             asset: pixeldrain-cli-linux-x86_64-musl
 
-          - name: Linux ARM64
+          # Linux ARM64
+          - name: Linux ARM64 GNU
             os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             binary: target/aarch64-unknown-linux-gnu/release/pixeldrain-cli
             asset: pixeldrain-cli-linux-aarch64-gnu
+
+          - name: Linux ARM64 MUSL
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            binary: target/aarch64-unknown-linux-musl/release/pixeldrain-cli
+            asset: pixeldrain-cli-linux-aarch64-musl
+
+          # Linux ARMv7 (32-bit Raspberry Pi / SBCs)
+          - name: Linux ARMv7 GNU
+            os: ubuntu-latest
+            target: armv7-unknown-linux-gnueabihf
+            binary: target/armv7-unknown-linux-gnueabihf/release/pixeldrain-cli
+            asset: pixeldrain-cli-linux-armv7-gnueabihf
+            use_cross: true
+
+          - name: Linux ARMv7 MUSL
+            os: ubuntu-latest
+            target: armv7-unknown-linux-musleabihf
+            binary: target/armv7-unknown-linux-musleabihf/release/pixeldrain-cli
+            asset: pixeldrain-cli-linux-armv7-musleabihf
+            use_cross: true
+
+          # Linux 32-bit x86 (i686)
+          - name: Linux i686 GNU
+            os: ubuntu-latest
+            target: i686-unknown-linux-gnu
+            binary: target/i686-unknown-linux-gnu/release/pixeldrain-cli
+            asset: pixeldrain-cli-linux-i686-gnu
+            use_cross: true
+
+          - name: Linux i686 MUSL
+            os: ubuntu-latest
+            target: i686-unknown-linux-musl
+            binary: target/i686-unknown-linux-musl/release/pixeldrain-cli
+            asset: pixeldrain-cli-linux-i686-musl
+            use_cross: true
+
+          # Linux RISC-V 64-bit
+          - name: Linux RISC-V 64 GNU
+            os: ubuntu-latest
+            target: riscv64gc-unknown-linux-gnu
+            binary: target/riscv64gc-unknown-linux-gnu/release/pixeldrain-cli
+            asset: pixeldrain-cli-linux-riscv64-gnu
+            use_cross: true
+
+          # Android (Termux)
+          - name: Android ARM64
+            os: ubuntu-latest
+            target: aarch64-linux-android
+            binary: target/aarch64-linux-android/release/pixeldrain-cli
+            asset: pixeldrain-cli-android-termux-aarch64
+            use_cross: true
 
     runs-on: ${{ matrix.os }}
 
@@ -66,15 +119,24 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      # Required for the MUSL build
+      # Required for native host MUSL builds
       - name: Install MUSL tools
-        if: matrix.target == 'x86_64-unknown-linux-musl'
+        if: (!matrix.use_cross) && contains(matrix.target, 'musl')
         run: |
           sudo apt-get update
           sudo apt-get install -y musl-tools
 
+      - name: Install cross
+        if: matrix.use_cross
+        uses: taiki-e/install-action@cross
+
       - name: Build
-        run: cargo build --release --target ${{ matrix.target }}
+        run: |
+          if [ "${{ matrix.use_cross }}" = "true" ]; then
+            cross build --release --target ${{ matrix.target }}
+          else
+            cargo build --release --target ${{ matrix.target }}
+          fi
 
       - name: Package
         shell: bash
@@ -85,13 +147,14 @@ jobs:
 
           cp "${{ matrix.binary }}" "dist/${{ matrix.asset }}"
 
-          if command -v sha256sum >/dev/null 2>&1; then
-            sha256sum "dist/${{ matrix.asset }}" \
-              > "dist/sha256-${{ matrix.target }}.txt"
-          else
-            shasum -a 256 "dist/${{ matrix.asset }}" \
-              > "dist/sha256-${{ matrix.target }}.txt"
-          fi
+          (
+            cd dist
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "${{ matrix.asset }}" > "sha256-${{ matrix.target }}.txt"
+            else
+              shasum -a 256 "${{ matrix.asset }}" > "sha256-${{ matrix.target }}.txt"
+            fi
+          )
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
@@ -106,6 +169,32 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract Release Notes from CHANGELOG
+        shell: bash
+        run: |
+          python3 -c "
+          import re
+
+          tag = '${{ github.ref_name }}'.lstrip('v')
+          try:
+              with open('CHANGELOG.md', 'r') as f:
+                  content = f.read()
+              pattern = rf'## \[{re.escape(tag)}\][^\n]*\n(.*?)(?=\n## \[|\Z)'
+              match = re.search(pattern, content, re.DOTALL)
+              if match:
+                  notes = match.group(1).strip()
+                  with open('release_notes.md', 'w') as out:
+                      out.write(notes + '\n')
+                  print(f'Successfully extracted release notes for v{tag}:\n{notes}')
+              else:
+                  print(f'No matching changelog entry found for v{tag}; will fall back to default notes.')
+          except Exception as e:
+              print(f'Error reading CHANGELOG.md: {e}')
+          "
+
       - name: Download Build Artifacts
         uses: actions/download-artifact@v4
         with:
@@ -121,36 +210,11 @@ jobs:
           echo "Downloaded artifacts:"
           find artifacts -type f -print
 
-          # Windows
-          cp artifacts/x86_64-pc-windows-msvc/pixeldrain-cli-windows-x86_64.exe \
-             release/
+          # Copy all compiled binaries into release/
+          find artifacts -mindepth 2 -maxdepth 2 -type f ! -name "sha256-*.txt" -exec cp {} release/ \;
 
-          # macOS
-          cp artifacts/aarch64-apple-darwin/pixeldrain-cli-macos-aarch64 \
-             release/
-
-          cp artifacts/x86_64-apple-darwin/pixeldrain-cli-macos-x86_64 \
-             release/
-
-          # Linux
-          cp artifacts/x86_64-unknown-linux-gnu/pixeldrain-cli-linux-x86_64-gnu \
-             release/
-
-          cp artifacts/x86_64-unknown-linux-musl/pixeldrain-cli-linux-x86_64-musl \
-             release/
-
-          cp artifacts/aarch64-unknown-linux-gnu/pixeldrain-cli-linux-aarch64-gnu \
-             release/
-
-          # Combined SHA256 checksums
-          cat \
-            artifacts/x86_64-pc-windows-msvc/sha256-x86_64-pc-windows-msvc.txt \
-            artifacts/aarch64-apple-darwin/sha256-aarch64-apple-darwin.txt \
-            artifacts/x86_64-apple-darwin/sha256-x86_64-apple-darwin.txt \
-            artifacts/x86_64-unknown-linux-gnu/sha256-x86_64-unknown-linux-gnu.txt \
-            artifacts/x86_64-unknown-linux-musl/sha256-x86_64-unknown-linux-musl.txt \
-            artifacts/aarch64-unknown-linux-gnu/sha256-aarch64-unknown-linux-gnu.txt \
-            > release/SHA256_CHECKSUMS.txt
+          # Combine all sha256 checksums into SHA256_CHECKSUMS.txt
+          find artifacts -name "sha256-*.txt" -exec cat {} + | sort -k 2 > release/SHA256_CHECKSUMS.txt
 
           echo
           echo "Release assets:"
@@ -165,6 +229,7 @@ jobs:
         with:
           files: release/*
           name: Release ${{ github.ref_name }}
+          body_path: release_notes.md
           generate_release_notes: true
           draft: false
           prerelease: false
