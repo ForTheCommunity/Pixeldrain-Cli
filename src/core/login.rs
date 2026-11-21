@@ -10,6 +10,11 @@ pub fn login() -> Result<()> {
     login_with_auth(&AuthOptions::default())
 }
 
+/// Logs out by deleting locally stored credentials.
+pub fn logout() -> Result<bool> {
+    storage::delete_credentials()
+}
+
 /// Logs in and saves encrypted credentials, using CLI/env overrides when provided
 /// and prompting interactively only for missing values.
 pub fn login_with_auth(auth: &AuthOptions) -> Result<()> {

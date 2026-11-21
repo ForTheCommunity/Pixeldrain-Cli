@@ -86,6 +86,15 @@ async fn main() {
             }
         }
 
+        Some(Commands::Logout) => match pixeldrain_cli::core::login::logout() {
+            Ok(true) => println!("✓ Logged out successfully. Stored credentials removed."),
+            Ok(false) => println!("You are not logged in."),
+            Err(e) => {
+                eprintln!("Error logging out: {}", e);
+                std::process::exit(1);
+            }
+        },
+
         Some(Commands::About) => show_about(),
 
         None => Cli::command().print_help().expect("failed to print help"),

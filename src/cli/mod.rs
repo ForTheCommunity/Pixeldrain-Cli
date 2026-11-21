@@ -10,12 +10,23 @@ pub mod commands;
 pub struct Cli {
     /// Password to decrypt your stored Pixeldrain API key (or encrypt it during login).
     /// Can also be set via PIXELDRAIN_PASSWORD (environment variable).
-    #[arg(short = 'P', long, global = true, value_name = "PASSWORD", help_heading = "Global Options")]
+    #[arg(
+        short = 'P',
+        long,
+        global = true,
+        value_name = "PASSWORD",
+        help_heading = "Global Options"
+    )]
     pub password: Option<String>,
 
     /// Pixeldrain API key (temporarily overrides stored credentials).
     /// Can also be set via PIXELDRAIN_API_KEY (environment variable).
-    #[arg(long, global = true, value_name = "API_KEY", help_heading = "Global Options")]
+    #[arg(
+        long,
+        global = true,
+        value_name = "API_KEY",
+        help_heading = "Global Options"
+    )]
     pub api_key: Option<String>,
 
     #[command(subcommand)]
@@ -35,6 +46,7 @@ impl Cli {
 pub enum Commands {
     /// Login to Pixeldrain.
     Login,
+
     /// Upload File/s.
     Upload(UploadArgs),
 
@@ -58,6 +70,9 @@ pub enum Commands {
         #[arg(long, value_name = "PASSWORD")]
         keystore_pass: Option<String>,
     },
+
+    /// Logout from Pixeldrain (removes stored credentials).
+    Logout,
 
     /// Show information about this project.
     About,
@@ -140,11 +155,7 @@ pub struct UploadArgs {
 
     /// Encrypt file(s) before upload directly using a password (self-contained).
     /// Prompts securely if passed without a value (or uses PIXELDRAIN_ENCRYPT_PASS environment variable).
-    #[arg(
-        long,
-        conflicts_with = "encrypt_keystore",
-        value_name = "PASSWORD"
-    )]
+    #[arg(long, conflicts_with = "encrypt_keystore", value_name = "PASSWORD")]
     pub encrypt_pass: Option<Option<String>>, // None if flag omitted, Some(None) if flag passed without value, Some(Some(pwd)) if value provided
 
     /// Encrypt file(s) before upload using a keystore file
@@ -226,6 +237,12 @@ mod tests {
         .unwrap();
         assert_eq!(cli_after.password.as_deref(), Some("secret2"));
         assert_eq!(cli_after.api_key.as_deref(), Some("key456"));
+    }
+
+    #[test]
+    fn test_logout_command() {
+        let cli = Cli::try_parse_from(["pixeldrain-cli", "logout"]).unwrap();
+        assert!(matches!(cli.command, Some(Commands::Logout)));
     }
 
     #[test]

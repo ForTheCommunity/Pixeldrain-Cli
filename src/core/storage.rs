@@ -19,10 +19,7 @@ pub fn project_data_dir() -> Result<PathBuf> {
     let project_dir = ProjectDirs::from("org", "forthecommunity", "pixeldrain-cli")
         .ok_or_else(|| anyhow!("Error getting project dir !!!"))?;
 
-    let data_dir = project_dir.data_dir();
-    fs::create_dir_all(data_dir)?;
-
-    Ok(data_dir.to_path_buf())
+    Ok(project_dir.data_dir().to_path_buf())
 }
 
 fn credentials_path() -> Result<PathBuf> {
@@ -30,6 +27,9 @@ fn credentials_path() -> Result<PathBuf> {
 }
 pub fn save_credentials(credentials: &EncryptedData) -> Result<()> {
     let path = credentials_path()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
 
     let json = serde_json::to_string_pretty(credentials)?;
 
@@ -51,6 +51,19 @@ pub fn load_credentials() -> Result<EncryptedData> {
     let credentials = serde_json::from_str(&json)?;
 
     Ok(credentials)
+}
+
+pub fn delete_credentials_at(path: &std::path::Path) -> Result<bool> {
+    if path.exists() {
+        fs::remove_file(path)?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+pub fn delete_credentials() -> Result<bool> {
+    delete_credentials_at(&credentials_path()?)
 }
 
 /// Resolves the Pixeldrain API key from CLI/env overrides, or loads and decrypts
@@ -105,5 +118,24 @@ mod tests {
             password: None,
         };
         assert!(resolve_api_key(&auth).is_err());
+    }
+
+    #[test]
+    fn test_delete_credentials_at() {
+        let temp_dir = std::env::temp_dir().join("pixeldrain_test_logout");
+        let _ = fs::create_dir_all(&temp_dir);
+        let test_file = temp_dir.join("test_credentials.json");
+
+        if test_file.exists() {
+            let _ = fs::remove_file(&test_file);
+        }
+        assert_eq!(delete_credentials_at(&test_file).unwrap(), false);
+
+        fs::write(&test_file, "{}").unwrap();
+        assert!(test_file.exists());
+        assert_eq!(delete_credentials_at(&test_file).unwrap(), true);
+        assert!(!test_file.exists());
+
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }
