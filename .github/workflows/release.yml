@@ -101,14 +101,6 @@ jobs:
             asset: pixeldrain-cli-linux-riscv64-gnu
             use_cross: true
 
-          # Android (Termux)
-          - name: Android ARM64
-            os: ubuntu-latest
-            target: aarch64-linux-android
-            binary: target/aarch64-linux-android/release/pixeldrain-cli
-            asset: pixeldrain-cli-android-termux-aarch64
-            use_cargo_ndk: true
-
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -127,10 +119,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y musl-tools
 
-      - name: Install cargo-ndk
-        if: matrix.use_cargo_ndk
-        uses: taiki-e/install-action@cargo-ndk
-
       - name: Install cross
         if: matrix.use_cross
         uses: taiki-e/install-action@cross
@@ -138,9 +126,7 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          if [ "${{ matrix.use_cargo_ndk }}" = "true" ]; then
-            cargo ndk --target ${{ matrix.target }} --platform 24 build --release
-          elif [ "${{ matrix.use_cross }}" = "true" ]; then
+          if [ "${{ matrix.use_cross }}" = "true" ]; then
             cross build --release --target ${{ matrix.target }}
           else
             cargo build --release --target ${{ matrix.target }}
