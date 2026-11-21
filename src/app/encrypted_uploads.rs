@@ -4,10 +4,10 @@ use std::time::Duration;
 use anyhow::{Result, anyhow};
 use indicatif::{ProgressBar, ProgressStyle};
 use tokio::fs::{self, File};
-use transformer::crypt::{encrypt_file_ks, encrypt_file_wp};
+use transformer::crypt::{check_master_password, encrypt_file_ks, encrypt_file_wp};
 
 use crate::core::hash::{compute_b3hash, compute_b3hash_with_pb};
-use crate::core::password::{env_non_empty, prompt_password};
+use crate::core::password::{resolve_secret, resolve_secret_confirmed};
 use crate::{
     api::endpoints::album::AlbumApi,
     app::uploader::UploadPipeline,
@@ -135,6 +135,37 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
     );
     println!("{}", transformer_notice());
 
+    let ks_master_password: Option<String> =
+        if let Some(keystore_path) = &upload_options.enc_keystore {
+            let pwd = resolve_secret(
+                upload_options.enc_keystore_pass.as_deref(),
+                "PIXELDRAIN_KEYSTORE_PASS",
+                " Enter Master Password for Keystore -> ",
+            )?;
+            match check_master_password(keystore_path, &pwd) {
+                Ok(true) => Some(pwd),
+                Ok(false) => {
+                    eprintln!(" Enter correct Master Password for keystore !!!");
+                    return Err(anyhow!("Incorrect master password"));
+                }
+                Err(e) => return Err(anyhow!("Error -> {}", e)),
+            }
+        } else {
+            None
+        };
+
+    let enc_password: Option<String> = if let Some(opt_pwd) = &upload_options.enc_password {
+        Some(resolve_secret_confirmed(
+            opt_pwd.as_deref(),
+            "PIXELDRAIN_ENCRYPT_PASS",
+            " Enter Encryption Password -> ",
+            " Confirm Encryption Password -> ",
+            " Passwords do not match!",
+        )?)
+    } else {
+        None
+    };
+
     let is_multi = total_files > 1;
 
     let progress = if is_multi {
@@ -154,32 +185,8 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
     }
     fs::create_dir_all(&temp_dir).await?;
 
-    // Master password cache for keystore (asked only once)
-    let mut ks_master_password: Option<String> = upload_options
-        .enc_keystore_pass
-        .clone()
-        .or_else(|| env_non_empty("PIXELDRAIN_KEYSTORE_PASS"));
-    // Password cache for password-based encryption (asked only once)
-    let mut enc_password: Option<String> = match &upload_options.enc_password {
-        Some(Some(pwd)) => Some(pwd.clone()),
-        Some(None) => env_non_empty("PIXELDRAIN_ENCRYPT_PASS"),
-        None => None,
-    };
-
     // upload loop
     for (file, orignal_filename, file_size) in files_to_upload {
-        // Prompt for master password only if it hasn't been provided yet
-        if ks_master_password.is_none() && upload_options.enc_keystore.is_some() {
-            let password = prompt_password(" Enter Your Master Password ->  ")?;
-            ks_master_password = Some(password);
-        }
-
-        // Prompt for encryption password only if it hasn't been provided yet
-        if enc_password.is_none() && upload_options.enc_password.is_some() {
-            let password = prompt_password(" Enter Encryption Password ->  ")?;
-            enc_password = Some(password);
-        }
-
         // computing blake3 Hash of orignal file.
         let original_file_b3hash = if let Some(p) = &progress {
             compute_b3hash_with_pb(
