@@ -1,16 +1,18 @@
 use anyhow::{Context, Result, anyhow};
 use indicatif::{ProgressBar, ProgressStyle};
+use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::{fs::File, io::AsyncWriteExt};
 use transformer::crypt::{check_master_password, decrypt_file_ks, decrypt_file_wp};
 
+use crate::app::TRANSFORMER_GIT_URL;
 use crate::{
     api::{client::ApiClient, endpoints::album::AlbumApi},
     core::{
         format_bytes,
         hash::{Blake3Writer, compute_b3hash, compute_b3hash_with_pb},
-        password::resolve_secret,
+        password::{env_non_empty, prompt_password, resolve_secret},
         progress::{ProgressReader, TransferProgress, TransferType},
         state::download::DownloadState,
     },
@@ -120,6 +122,7 @@ impl Downloader {
         }
 
         let mut password: Option<String> = None;
+        let mut active_keystore_path = self.keystore_path.clone();
 
         if self.keystore_path.is_some() || self.password.is_some() {
             if let Some(ks_path) = self.keystore_path.as_ref() {
@@ -196,6 +199,100 @@ impl Downloader {
             ));
         }
 
+        let mut is_decrypting = password.is_some() || active_keystore_path.is_some();
+        let has_encrypted_files = items.iter().any(|item| item.name.ends_with(".encrypted"));
+
+        if has_encrypted_files && !is_decrypting {
+            if let Some(env_pwd) = env_non_empty("PIXELDRAIN_DECRYPT_PASS") {
+                password = Some(env_pwd);
+                is_decrypting = true;
+            } else if std::io::stdin().is_terminal() {
+                println!("\n  🔒 Detected encrypted file(s) in download list.");
+                println!("  How would you like to decrypt?");
+                println!("    [1] Password");
+                println!("    [2] Keystore file");
+                println!("    [3] Skip decryption (decrypt manually using Transformer tool later)");
+                print!("  Select an option [1/2/3]: ");
+                let _ = std::io::stdout().flush();
+
+                let mut choice = String::new();
+                if std::io::stdin().read_line(&mut choice).is_ok() {
+                    let choice = choice.trim();
+                    match choice {
+                        "1" => {
+                            let pwd_input = prompt_password("  Enter Decryption Password: ")?;
+                            if !pwd_input.is_empty() {
+                                password = Some(pwd_input);
+                                is_decrypting = true;
+                            } else {
+                                println!(
+                                    "  ✦ No password entered. Downloading raw encrypted file(s)."
+                                );
+                                println!(
+                                    "  ✦ You can decrypt them manually using Transformer: {}",
+                                    TRANSFORMER_GIT_URL
+                                );
+                            }
+                        }
+                        "2" => {
+                            print!("  Enter Keystore path: ");
+                            let _ = std::io::stdout().flush();
+                            let mut ks_input = String::new();
+                            if std::io::stdin().read_line(&mut ks_input).is_ok() {
+                                let ks_path = PathBuf::from(ks_input.trim());
+                                if !ks_path.exists() {
+                                    eprintln!(
+                                        "  ⚠ Keystore file does not exist: {}",
+                                        ks_path.display()
+                                    );
+                                    return Err(anyhow!("Keystore file does not exist"));
+                                }
+                                let pwd_input = resolve_secret(
+                                    self.keystore_pass.as_deref(),
+                                    "PIXELDRAIN_KEYSTORE_PASS",
+                                    "  Enter Master Password for Keystore: ",
+                                )?;
+                                match check_master_password(&ks_path, &pwd_input) {
+                                    Ok(true) => {
+                                        password = Some(pwd_input);
+                                        active_keystore_path = Some(ks_path);
+                                        is_decrypting = true;
+                                    }
+                                    Ok(false) => {
+                                        eprintln!("  ⚠ Incorrect Master Password for keystore!");
+                                        return Err(anyhow!("Incorrect master password"));
+                                    }
+                                    Err(e) => return Err(anyhow!("Error -> {}", e)),
+                                }
+                            }
+                        }
+                        "3" => {
+                            println!("  ✦ Skipping decryption. Downloading raw encrypted file(s).");
+                            println!(
+                                "  ✦ You can decrypt them manually using Transformer: {}",
+                                TRANSFORMER_GIT_URL
+                            );
+                        }
+                        _ => {
+                            println!("  ✦ Skipping decryption. Downloading raw encrypted file(s).");
+                            println!(
+                                "  ✦ You can decrypt them manually using Transformer: {}",
+                                TRANSFORMER_GIT_URL
+                            );
+                        }
+                    }
+                }
+            } else {
+                eprintln!(
+                    "  ⚠ Encrypted file(s) detected, but running non-interactively without -d or -k."
+                );
+                eprintln!(
+                    "  ✦ You can decrypt them manually using Transformer: {}",
+                    TRANSFORMER_GIT_URL
+                );
+            }
+        }
+
         // Load or create download state
         let mut download_state = match &self.state {
             Some(state_path) if state_path.exists() => {
@@ -218,15 +315,20 @@ impl Downloader {
         };
 
         let chunk_size = (self.chunk_size.max(1) as usize) * 1024 * 1024;
-        let is_decrypting = self.password.is_some() || self.keystore_path.is_some();
 
         let mut items_to_download = Vec::with_capacity(items.len());
         let mut skipped_count = 0usize;
 
         for item in items {
+            let item_is_encrypted = item.name.ends_with(".encrypted");
             if self.state.is_some()
                 && download_state
-                    .file_lookup(&item.id, &self.output_path, is_decrypting, chunk_size)
+                    .file_lookup(
+                        &item.id,
+                        &self.output_path,
+                        is_decrypting && item_is_encrypted,
+                        chunk_size,
+                    )
                     .await?
             {
                 skipped_count += 1;
@@ -316,7 +418,8 @@ impl Downloader {
 
             // Create the temporary destination file wrapped with streaming BLAKE3 (for unencrypted state)
             let dest_file = File::create(&temp_file_path).await?;
-            let compute_b3_on_fly = self.state.is_some() && !is_decrypting;
+            let will_decrypt = is_decrypting && filename.ends_with(".encrypted");
+            let compute_b3_on_fly = self.state.is_some() && !will_decrypt;
             let mut blake3_writer = Blake3Writer::new(dest_file, compute_b3_on_fly);
 
             // Stream data from the API response into the temporary file
@@ -335,8 +438,8 @@ impl Downloader {
                     tokio::fs::rename(&temp_file_path, &dest_file_path).await?;
                     active_progress.file_finished(&file_pb, &filename, true);
 
-                    // decrypting file (if password or keystore was provided)
-                    let (final_local_path, final_file_size) = if is_decrypting {
+                    // decrypting file (if password or keystore was provided and file is encrypted)
+                    let (final_local_path, final_file_size) = if will_decrypt {
                         let file_path = &dest_file_path;
                         let file_size = match tokio::fs::metadata(file_path).await {
                             Ok(meta) => meta.len(),
@@ -363,7 +466,7 @@ impl Downloader {
                             .ok_or_else(|| anyhow!("Password not provided for decryption"))?
                             .clone();
 
-                        let dec_res = if let Some(keystore_path) = &self.keystore_path {
+                        let dec_res = if let Some(keystore_path) = &active_keystore_path {
                             // decyrpt_file_ks
                             decrypt_file_ks(
                                 keystore_path,

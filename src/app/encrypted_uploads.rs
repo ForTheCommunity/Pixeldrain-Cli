@@ -6,6 +6,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use tokio::fs::{self, File};
 use transformer::crypt::{check_master_password, encrypt_file_ks, encrypt_file_wp};
 
+use crate::app::TRANSFORMER_GIT_URL;
 use crate::core::hash::{compute_b3hash, compute_b3hash_with_pb};
 use crate::core::password::{resolve_secret, resolve_secret_confirmed};
 use crate::{
@@ -461,8 +462,6 @@ pub async fn encrypted_upload(upload_pipeline: UploadPipeline) -> Result<()> {
 
     Ok(())
 }
-
-const TRANSFORMER_GIT_URL: &str = "https://gitlab.com/ForTheCommunity/Transformer.git";
 
 /// Returns the informational banner noting the external `transformer` dependency.
 fn transformer_notice() -> String {
