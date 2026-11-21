@@ -39,9 +39,12 @@ pub async fn upload(args: UploadArgs, auth: &AuthOptions) -> Result<()> {
 
 pub async fn download(args: DownloadArgs, auth: &AuthOptions) -> Result<()> {
     let api_key = resolve_api_key(auth)?;
+    let output_path = args
+        .path
+        .ok_or_else(|| anyhow::anyhow!("Output path is required"))?;
     let downloader = Downloader {
         urls: args.links,
-        output_path: args.path,
+        output_path,
         keystore_path: args.decrypt_keystore,
         keystore_pass: args.keystore_pass,
         password: args.decrypt_pass,

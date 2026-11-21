@@ -39,6 +39,15 @@ async fn main() {
         }
 
         Some(Commands::Download(args)) => {
+            if args.links.is_empty() || args.path.is_none() {
+                let mut cmd = Cli::command();
+
+                if let Some(sub) = cmd.find_subcommand_mut("download") {
+                    let _ = sub.print_help();
+                }
+                return;
+            }
+
             if let Err(e) = download(args, &auth).await {
                 eprintln!("Error -> {}", e);
                 std::process::exit(1);

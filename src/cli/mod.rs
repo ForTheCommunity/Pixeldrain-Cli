@@ -9,13 +9,13 @@ pub mod commands;
 #[command(version)]
 pub struct Cli {
     /// Password to decrypt your stored Pixeldrain API key (or encrypt it during login).
-    /// Can also be set via PIXELDRAIN_PASSWORD.
-    #[arg(short = 'P', long, global = true, value_name = "PASSWORD")]
+    /// Can also be set via PIXELDRAIN_PASSWORD (environment variable).
+    #[arg(short = 'P', long, global = true, value_name = "PASSWORD", help_heading = "Global Options")]
     pub password: Option<String>,
 
-    /// Pixeldrain API key (bypasses stored credentials, or sets API key during login).
-    /// Can also be set via PIXELDRAIN_API_KEY.
-    #[arg(long, global = true, value_name = "API_KEY")]
+    /// Pixeldrain API key (temporarily overrides stored credentials).
+    /// Can also be set via PIXELDRAIN_API_KEY (environment variable).
+    #[arg(long, global = true, value_name = "API_KEY", help_heading = "Global Options")]
     pub api_key: Option<String>,
 
     #[command(subcommand)]
@@ -71,7 +71,7 @@ pub struct DownloadArgs {
 
     /// output path where file/s will be downloaded & saved.
     #[arg(short = 'p', long)]
-    pub path: PathBuf,
+    pub path: Option<PathBuf>,
 
     /// Decrypt downloaded files with password.
     /// Prompts if flag is passed without a value (or uses PIXELDRAIN_DECRYPT_PASS).
@@ -363,6 +363,15 @@ mod tests {
             ])
             .is_err()
         );
+        // Running download without arguments parses so main can display help
+        let cli_empty = Cli::try_parse_from(["pixeldrain-cli", "download"]).unwrap();
+        match cli_empty.command {
+            Some(Commands::Download(args)) => {
+                assert!(args.links.is_empty());
+                assert!(args.path.is_none());
+            }
+            _ => panic!("expected Download command"),
+        }
     }
 
     #[test]
