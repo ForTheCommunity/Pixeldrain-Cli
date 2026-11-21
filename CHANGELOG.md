@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.6] - 2026-11-21
+- Added file encryption before upload using password or keystore file via [Transformer](https://gitlab.com/ForTheCommunity/Transformer).
+- Added file decryption on download with automatic `.encrypted` file detection and interactive decryption prompts.
+- Added `create-keystore` command to create encryption keystores.
+- Added `logout` command to remove locally stored credentials from the machine.
+- Added `check-update` (alias `update`) command to check for new releases across GitLab & GitHub and view the latest changelog.
+- Added raw ID download support with automatic file/album(list) detection.
+- Added global `--api-key` and `-P` / `--password` options and environment variable support across all subcommands for seamless scripting.
+- Improved CLI error handling to display full subcommand help when required arguments are omitted.
+- Added update instructions for Cargo, AM/AppMan, GitLab, and GitHub.
+
 ## [0.1.5] - 2026-10-11
 - Decoupled old messy monolithic code
 

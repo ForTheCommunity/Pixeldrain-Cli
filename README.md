@@ -1,6 +1,6 @@
 # 🛠 Pixeldrain CLI
 
-A simple command-line client for uploading files and directories to [Pixeldrain](https://pixeldrain.com).
+The Ultimate CLI client for [Pixeldrain](https://pixeldrain.com).
 
 -> Join [Matrix Chat Room](https://matrix.to/#/#pixeldrain_cli:matrix.org)
 <br>
@@ -16,9 +16,11 @@ A simple command-line client for uploading files and directories to [Pixeldrain]
 - **Filter uploads by file extension** (e.g. `mp4`, `jpg`, `png`)
 - **Natural file ordering** for predictable upload sequences
 - **Concurrent uploads** for smaller files
+- **Download files and albums** via full URLs or file/album/list IDs with automatic detection and interactive decryption
 - **Real-time progress tracking** with per-file and overall progress
 - **Persistent upload state** — resume interrupted uploads without re-uploading completed files [[using a state file](#-save-progress-of-uploaded-files-so-it-upload-can-be-resumed-later)].
-- **File-size validation** — detect modified files and automatically upload them again [[using a state file](#-save-progress-of-uploaded-files-so-it-upload-can-be-resumed-later)].
+- **Persistent download state** — resume interrupted downloads without re-downloading completed files [[using a state file](#-save-progress-of-uploaded-files-so-it-upload-can-be-resumed-later)].
+- **File size and hash validation** — detect modified files and automatically upload/download them again and skip if nothing is changed. [[using a state file](#-save-progress-of-uploaded-files-so-it-upload-can-be-resumed-later)].
 - **Optional automatic deletion** of local files after successful upload
 - **Create Pixeldrain albums/lists** from uploaded files
 - **Automatic album updates** — add newly uploaded files to existing albums
@@ -26,6 +28,8 @@ A simple command-line client for uploading files and directories to [Pixeldrain]
 - **List albums/lists** in your Pixeldrain account
 - **View files contained in an album/list**
 - **Delete albums/lists and their contained files**
+- **File encryption & decryption** — `pixeldrain-cli` uses [Transformer](https://gitlab.com/ForTheCommunity/Transformer) for encrypting/decrypting files (supports password and keystore modes)
+- **Create and manage encryption keystores** for secure file operations
 - **Secure local API-key storage**
 - **Password-based API-key encryption**
 
@@ -69,9 +73,17 @@ pixeldrain-cli login --api-key "<API_KEY>" -P "<PASSWORD>"
 PIXELDRAIN_API_KEY="<API_KEY>" PIXELDRAIN_PASSWORD="<PASSWORD>" pixeldrain-cli login
 ```
 
+# ❖ Logout
+
+Remove locally stored API credentials from your machine:
+
+```bash
+pixeldrain-cli logout
+```
+
 # ❖ Global Options
 
-These flags work with any command (`login`, `upload`, `download`, `album`, `create-keystore`):
+These flags work with any command (`upload`, `download`, `album`, & `check-update`):
 
 | Option | Long form | Env Var | Description |
 |--------|-----------|---------|-------------|
@@ -79,6 +91,9 @@ These flags work with any command (`login`, `upload`, `download`, `album`, `crea
 | | `--api-key <API_KEY>` | `PIXELDRAIN_API_KEY` | Pixeldrain API key directly (bypasses stored credentials, or sets key during `login`) |
 
 # ❖ Upload
+
+> [!NOTE]
+> `pixeldrain-cli` uses [Transformer](https://gitlab.com/ForTheCommunity/Transformer) for encrypting/decrypting files.
 
 ```text
 pixeldrain-cli upload [OPTIONS]
@@ -92,9 +107,9 @@ pixeldrain-cli upload [OPTIONS]
 | `-f` | `--formats <FORMATS>...` | File extensions to upload |
 | `-d` | `--delete` | Delete uploaded files from local storage device [HDD / SSD] |
 | `-s` | `--state <STATE>` | Path to a state file for tracking uploaded files and resuming uploads |
-| | `--encrypt-pass [<PASSWORD>]` | Encrypt file(s) before upload using a password (prompts if value omitted, or uses `PIXELDRAIN_ENCRYPT_PASS`) |
+| | `--encrypt-pass [<PASSWORD>]` | Encrypt file(s) before upload using a password (prompts if value omitted, or uses `PIXELDRAIN_ENCRYPT_PASS` environment variable) |
 | | `--encrypt-keystore <KEYSTORE_PATH>` | Encrypt file(s) before upload using a keystore file |
-| | `--keystore-pass <PASSWORD>` | Master password for `--encrypt-keystore` (or uses `PIXELDRAIN_KEYSTORE_PASS`) |
+| | `--keystore-pass <PASSWORD>` | Master password for `--encrypt-keystore` (or uses `PIXELDRAIN_KEYSTORE_PASS` environment variable) |
 | `-c` | `--chunk-size <CHUNK_SIZE>` | Chunk/buffer size used while hashing & encrypting files (1–100 MB, default: `1`) |
 
 
@@ -190,6 +205,9 @@ After the files are uploaded, the CLI adds those files into specified albumn.
 
 ## ❖ Download
 
+> [!NOTE]
+> `pixeldrain-cli` uses [Transformer](https://gitlab.com/ForTheCommunity/Transformer) for encrypting/decrypting things.
+
 ```text
 pixeldrain-cli download [OPTIONS] --path <PATH>
 ```
@@ -198,17 +216,19 @@ pixeldrain-cli download [OPTIONS] --path <PATH>
 |--------|-----------|-------------|
 | `-l` | `--links <LINKS>...` | Pixeldrain file/album URLs or file IDs to download |
 | `-p` | `--path <PATH>` | Output path where file(s) will be downloaded & saved |
-| `-d` | `--decrypt-pass [<PASSWORD>]` | Decrypt downloaded files with password (prompts if value omitted, or uses `PIXELDRAIN_DECRYPT_PASS`) |
+| `-d` | `--decrypt-pass [<PASSWORD>]` | Decrypt downloaded files with password (prompts if value omitted, or uses `PIXELDRAIN_DECRYPT_PASS` environment variable) |
 | `-k` | `--decrypt-keystore <KEYSTORE_PATH>` | Decrypt downloaded files with a keystore file |
-| | `--keystore-pass <PASSWORD>` | Master password for `--decrypt-keystore` (or uses `PIXELDRAIN_KEYSTORE_PASS`) |
+| | `--keystore-pass <PASSWORD>` | Master password for `--decrypt-keystore` (or uses `PIXELDRAIN_KEYSTORE_PASS` environment variable) |
 | `-s` | `--state <STATE>` | Path to a state file for tracking downloaded files and resuming downloads |
 | `-c` | `--chunk-size <CHUNK_SIZE>` | Chunk/buffer size used while hashing files for state verification (1–100 MB, default: `1`) |
 
 Examples:
 
 ```bash
-# Download a file or album
+# Download a file or album (full URL or raw ID)
 pixeldrain-cli download -l "https://pixeldrain.com/u/<id>" -p ./downloads
+# or simply using the raw ID:
+pixeldrain-cli download -l 2o8FjQ8T -p ./downloads
 
 # Download and decrypt using a password
 pixeldrain-cli download -l "https://pixeldrain.com/u/<id>" -p ./downloads -d "<PASSWORD>"
@@ -217,7 +237,10 @@ pixeldrain-cli download -l "https://pixeldrain.com/u/<id>" -p ./downloads -d "<P
 pixeldrain-cli download -l "https://pixeldrain.com/u/<id>" -p ./downloads -k ./keystore.json --keystore-pass "<KS_PASS>"
 ```
 
+> If you download `.encrypted` file(s) without passing `-d` or `-k`, the CLI will prompt interactively to choose password decryption, keystore decryption, or skipping decryption (to decrypt manually using Transformer).
+
 ## ❖ Create Keystore
+
 
 ```text
 pixeldrain-cli create-keystore -o <FILE_PATH> [OPTIONS]
@@ -335,6 +358,23 @@ pixeldrain-cli about
 ```
 
 Display information about the project.
+
+## ❖ Check for Updates
+
+```text
+pixeldrain-cli check-update [OPTIONS]
+```
+
+Check for new releases and view the latest changelog:
+
+```bash
+pixeldrain-cli check-update
+# or using alias:
+pixeldrain-cli update
+
+# View changelog even if already running the latest version:
+pixeldrain-cli update -c
+```
 
 ## ❖ API Key Security
 
